@@ -42,8 +42,8 @@
 char buf[MAXDATASIZE];
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.3 $";
-static char datestr[]     = "$Date: 2003/03/20 13:00:00 $";
+static char revisionstr[] = "$Revision: 1.1 $";
+static char datestr[]     = "$Date: 2003/08/21 13:38:47 $";
 
 struct Args
 {
@@ -230,7 +230,7 @@ int main(int argc, char **argv)
     {
       i=snprintf(buf, MAXDATASIZE-40, /* leave some space for login */
       "GET /%s HTTP/1.0\r\n"
-      "User-Agent: %s%s \r\n"
+      "User-Agent: %s/%s\r\n"
 //      "Accept: */*\r\n"
 //      "Connection: close\r\n"
       "Authorization: Basic "
