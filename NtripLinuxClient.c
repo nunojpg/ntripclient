@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id$
+  $Id: NtripLinuxClient.c,v 1.4 2004/07/14 10:09:22 stoecker Exp $
   Copyright (C) 2003 by Dirk Stoecker <stoecker@epost.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -43,8 +43,8 @@
 char buf[MAXDATASIZE];
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.3 $";
-static char datestr[]     = "$Date: 2004/05/19 07:59:24 $";
+static char revisionstr[] = "$Revision: 1.4 $";
+static char datestr[]     = "$Date: 2004/07/14 10:09:22 $";
 
 struct Args
 {
@@ -79,7 +79,7 @@ static int getargs(int argc, char **argv, struct Args *args)
   int i = 0, help = 0;
   char *t;
 
-  args->server = "213.20.169.236";
+  args->server = "213.20.239.197";
   args->port = 80;
   args->user = "";
   args->password = "";
