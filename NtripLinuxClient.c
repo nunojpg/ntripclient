@@ -42,8 +42,8 @@
 char buf[MAXDATASIZE];
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.1 $";
-static char datestr[]     = "$Date: 2003/08/21 13:38:47 $";
+static char revisionstr[] = "$Revision: 1.2 $";
+static char datestr[]     = "$Date: 2003/10/21 07:25:01 $";
 
 struct Args
 {
@@ -78,7 +78,7 @@ static int getargs(int argc, char **argv, struct Args *args)
   int i = 0, help = 0;
   char *t;
 
-  args->server = "129.217.182.51";
+  args->server = "213.20.169.236";
   args->port = 80;
   args->user = "";
   args->password = "";
