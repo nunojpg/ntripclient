@@ -1,5 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
+  $Id$
   Copyright (C) 2003 by Dirk Stoecker <stoecker@epost.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -42,8 +43,8 @@
 char buf[MAXDATASIZE];
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.2 $";
-static char datestr[]     = "$Date: 2003/10/21 07:25:01 $";
+static char revisionstr[] = "$Revision: 1.3 $";
+static char datestr[]     = "$Date: 2004/05/19 07:59:24 $";
 
 struct Args
 {
@@ -277,8 +278,23 @@ int main(int argc, char **argv)
       while((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) != -1)
       {
         fwrite(buf, numbytes, 1, stdout);
-        if(!strncmp("ENDSOURCETABLE\r\n", buf+numbytes-16, 16))
-          break;
+        if(!strncmp("ENDSOURCETABLE\r\n", buf+numbytes-16, 16)) break;
+        if(!strncmp("\r\nENDSOURCETABLE\r\n", buf+numbytes-18, 18)) break;
+        if(!strncmp("\r\nENDSOURCETABLE\r", buf+numbytes-17, 17)){fprintf(stdout, "\n"); break;}
+        if(!strncmp("\r\nENDSOURCETABLE", buf+numbytes-16, 16)){fprintf(stdout, "\r\n"); break;}
+        if(!strncmp("\r\nENDSOURCETABL", buf+numbytes-15, 15)){fprintf(stdout, "E\r\n"); break;}
+        if(!strncmp("\r\nENDSOURCETAB", buf+numbytes-14, 14)){fprintf(stdout, "LE\r\n"); break;}
+        if(!strncmp("\r\nENDSOURCETA", buf+numbytes-13, 13)){fprintf(stdout, "BLE\r\n"); break;}
+        if(!strncmp("\r\nENDSOURCET", buf+numbytes-12, 12)){fprintf(stdout, "ABLE\r\n"); break;}
+        if(!strncmp("\r\nENDSOURCE", buf+numbytes-11, 11)){fprintf(stdout, "TABLE\r\n"); break;}
+        if(!strncmp("\r\nENDSOURC", buf+numbytes-10, 10)){fprintf(stdout, "ETABLE\r\n"); break;}
+        if(!strncmp("\r\nENDSOUR", buf+numbytes-9,   9)){fprintf(stdout, "CETABLE\r\n"); break;}
+        if(!strncmp("\r\nENDSOU", buf+numbytes-8,   8)){fprintf(stdout, "RCETABLE\r\n"); break;}
+        if(!strncmp("\r\nENDSO", buf+numbytes-7,   7)){fprintf(stdout, "URCETABLE\r\n"); break;}
+        if(!strncmp("\r\nENDS", buf+numbytes-6,   6)){fprintf(stdout, "OURCETABLE\r\n"); break;}
+        if(!strncmp("\r\nEND", buf+numbytes-5,   5)){fprintf(stdout, "SOURCETABLE\r\n"); break;}
+        if(!strncmp("\r\nEN", buf+numbytes-4,   4)){fprintf(stdout, "DSOURCETABLE\r\n"); break;}
+        if(!strncmp("\r\nE", buf+numbytes-3,   3)){fprintf(stdout, "NDSOURCETABLE\r\n"); break;}
       }
     }
 
