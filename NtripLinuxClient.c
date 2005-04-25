@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.10 2005/02/16 15:23:36 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.11 2005/04/19 11:28:10 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -34,19 +34,18 @@
 #define AGENTSTRING "NTRIP NtripLinuxClient"
 
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
-char buf[MAXDATASIZE];
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.10 $";
-static char datestr[]     = "$Date: 2005/02/16 15:23:36 $";
+static char revisionstr[] = "$Revision: 1.11 $";
+static char datestr[]     = "$Date: 2005/04/19 11:28:10 $";
 
 struct Args
 {
-  char *server;
-  int   port;
-  char *user;
-  char *password;
-  char *data;
+  const char *server;
+  int         port;
+  const char *user;
+  const char *password;
+  const char *data;
 };
 
 /* option parsing */
@@ -130,7 +129,7 @@ static int getargs(int argc, char **argv, struct Args *args)
   return res;
 }
 
-static char encodingTable [64] = {
+static const char encodingTable [64] = {
   'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
   'Q','R','S','T','U','V','W','X','Y','Z','a','b','c','d','e','f',
   'g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v',
@@ -139,7 +138,7 @@ static char encodingTable [64] = {
 
 /* does not buffer overrun, but breaks directly after an error */
 /* returns the number of required bytes */
-static int encode(char *buf, int size, char *user, char *pwd)
+static int encode(char *buf, int size, const char *user, const char *pwd)
 {
   unsigned char inbuf[3];
   char *out = buf;
@@ -216,8 +215,10 @@ int main(int argc, char **argv)
       i = snprintf(buf, MAXDATASIZE,
       "GET / HTTP/1.0\r\n"
       "User-Agent: %s/%s\r\n"
-//      "Accept: */*\r\n"
-//      "Connection: close\r\n"
+#ifdef UNUSED
+      "Accept: */*\r\n"
+      "Connection: close\r\n"
+#endif
       "\r\n"
       , AGENTSTRING, revisionstr);
     }
@@ -226,8 +227,10 @@ int main(int argc, char **argv)
       i=snprintf(buf, MAXDATASIZE-40, /* leave some space for login */
       "GET /%s HTTP/1.0\r\n"
       "User-Agent: %s/%s\r\n"
-//      "Accept: */*\r\n"
-//      "Connection: close\r\n"
+#ifdef UNUSED
+      "Accept: */*\r\n"
+      "Connection: close\r\n"
+#endif
       "Authorization: Basic "
       , args.data, AGENTSTRING, revisionstr);
       if(i > MAXDATASIZE-40 && i < 0) /* second check for old glibc */
