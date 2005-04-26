@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.11 2005/04/19 11:28:10 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.12 2005/04/25 16:05:57 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -36,8 +36,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.11 $";
-static char datestr[]     = "$Date: 2005/04/19 11:28:10 $";
+static char revisionstr[] = "$Revision: 1.12 $";
+static char datestr[]     = "$Date: 2005/04/25 16:05:57 $";
 
 struct Args
 {
@@ -247,7 +247,7 @@ int main(int argc, char **argv)
       snprintf(buf+i, 5, "\r\n\r\n");
       i += 5;
     }
-    if(send(sockfd, buf, i, 0) != i)
+    if(send(sockfd, buf, (size_t)i, 0) != i)
     {
       perror("send");
       exit(1);
@@ -273,7 +273,7 @@ int main(int argc, char **argv)
         }
         else
         {
-          fwrite(buf, numbytes, 1, stdout);
+          fwrite(buf, (size_t)numbytes, 1, stdout);
           fflush(stdout);
         }
       }
@@ -282,7 +282,7 @@ int main(int argc, char **argv)
     {
       while((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) > 0)
       {
-        fwrite(buf, numbytes, 1, stdout);
+        fwrite(buf, (size_t)numbytes, 1, stdout);
       }
     }
 
