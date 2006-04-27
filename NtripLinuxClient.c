@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.14 2005/11/22 14:26:41 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.15 2005/12/06 16:50:26 euronav Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -37,8 +37,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.14 $";
-static char datestr[]     = "$Date: 2005/11/22 14:26:41 $";
+static char revisionstr[] = "$Revision: 1.15 $";
+static char datestr[]     = "$Date: 2005/12/06 16:50:26 $";
 
 struct Args
 {
@@ -238,7 +238,7 @@ int main(int argc, char **argv)
 #endif
       "Authorization: Basic "
       , args.data, AGENTSTRING, revisionstr);
-      if(i > MAXDATASIZE-40 && i < 0) /* second check for old glibc */
+      if(i > MAXDATASIZE-40 || i < 0) /* second check for old glibc */
       {
         fprintf(stderr, "Requested data too long\n");
         exit(1);
