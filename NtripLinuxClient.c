@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.15 2005/12/06 16:50:26 euronav Exp $
+  $Id: NtripLinuxClient.c,v 1.16 2006/04/27 09:44:17 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -21,6 +21,7 @@
 
 #include <ctype.h>
 #include <getopt.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -35,10 +36,11 @@
 #define AGENTSTRING "NTRIP NtripLinuxClient"
 
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
+#define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.15 $";
-static char datestr[]     = "$Date: 2005/12/06 16:50:26 $";
+static char revisionstr[] = "$Revision: 1.16 $";
+static char datestr[]     = "$Date: 2006/04/27 09:44:17 $";
 
 struct Args
 {
@@ -63,7 +65,87 @@ static struct option opts[] = {
 { "help",       no_argument,       0, 'h'},
 {0,0,0,0}};
 #endif
-#define ARGOPT "d:hp:r:s:u:"
+#define ARGOPT "-d:hp:r:s:u:"
+
+#ifdef __GNUC__
+static __attribute__ ((noreturn)) void sighandler_alarm(
+int sig __attribute__((__unused__)))
+#else /* __GNUC__ */
+static void sighandler_alarm(int sig)
+#endif /* __GNUC__ */
+{
+  fprintf(stderr, "ERROR: more than %d seconds no activity\n", ALARMTIME);
+  exit(1);
+}
+
+static const char *geturl(const char *url, struct Args *args)
+{
+  static char buf[1000];
+  static char *Buffer = buf;
+  static char *Bufend = buf+sizeof(buf);
+
+  if(strncmp("ntrip:", url, 6))
+    return "URL must start with 'ntrip:'.";
+  url += 6; /* skip ntrip: */
+
+  /* scan for mountpoint */
+  args->data = Buffer;
+  while(*url && *url != '@' && *url != '/' && Buffer != Bufend)
+    *(Buffer++) = *(url++);
+  if(Buffer == args->data)
+    return "Mountpoint required.";
+  else if(Buffer >= Bufend-1)
+    return "Parsing buffer too short.";
+  *(Buffer++) = 0;
+
+  if(*url == '/') /* username and password */
+  {
+    ++url;
+    args->user = Buffer;
+    while(*url && *url != '@' && *url != ':' && Buffer != Bufend)
+      *(Buffer++) = *(url++);
+    if(Buffer == args->user)
+      return "Username cannot be empty.";
+    else if(Buffer >= Bufend-1)
+      return "Parsing buffer too short.";
+    *(Buffer++) = 0;
+
+    if(*url == ':') ++url;
+
+    args->password = Buffer;
+    while(*url && *url != '@' && Buffer != Bufend)
+      *(Buffer++) = *(url++);
+    if(Buffer == args->password)
+      return "Password cannot be empty.";
+    else if(Buffer >= Bufend-1)
+      return "Parsing buffer too short.";
+    *(Buffer++) = 0;
+  }
+
+  if(*url == '@') /* server */
+  {
+    ++url;
+    args->server = Buffer;
+    while(*url && *url != ':' && Buffer != Bufend)
+      *(Buffer++) = *(url++);
+    if(Buffer == args->server)
+      return "Servername cannot be empty.";
+    else if(Buffer >= Bufend-1)
+      return "Parsing buffer too short.";
+    *(Buffer++) = 0;
+
+    if(*url == ':')
+    {
+      char *s2 = 0;
+      args->port = strtol(++url, &s2, 10);
+      if(*s2 || args->port <= 0 || args->port > 0xFFFF)
+        return "Illegal port number.";
+      url = s2;
+    }
+  }
+
+  return *url ? "Garbage at end of server string." : 0;
+}
 
 static int getargs(int argc, char **argv, struct Args *args)
 {
@@ -93,6 +175,16 @@ static int getargs(int argc, char **argv, struct Args *args)
     case 'p': args->password = optarg; break;
     case 'd': args->data = optarg; break;
     case 'h': help=1; break;
+    case 1:
+      {
+        const char *err;
+        if((err = geturl(optarg, args)))
+        {
+          fprintf(stderr, "%s\n\n", err);
+          res = 0;
+        }
+      }
+      break;
     case 'r': 
       args->port = strtoul(optarg, &t, 10);
       if((t && *t) || args->port < 1 || args->port > 65535)
@@ -100,7 +192,7 @@ static int getargs(int argc, char **argv, struct Args *args)
       break;
     case -1: break;
     }
-  } while(getoptr != -1 || !res);
+  } while(getoptr != -1 && res);
 
   for(a = revisionstr+11; *a && *a != ' '; ++a)
     revisionstr[i++] = *a;
@@ -118,13 +210,14 @@ static int getargs(int argc, char **argv, struct Args *args)
 
   if(!res || help)
   {
-    fprintf(stderr, "Version %s (%s) GPL\nUsage: %s -s server -u user ...\n"
+    fprintf(stderr, "Version %s (%s) GPL\nUsage:\n%s -s server -u user ...\n"
     " -d " LONG_OPT("--data     ") "the requested data set\n"
     " -s " LONG_OPT("--server   ") "the server name or address\n"
     " -p " LONG_OPT("--password ") "the login password\n"
     " -r " LONG_OPT("--port     ") "the server port number (default 80)\n"
     " -u " LONG_OPT("--user     ") "the user name\n"
-    , revisionstr, datestr, argv[0]);
+    "or using an URL:\n%s ntrip:mountpoint[/username[:password]][@server[:port]]\n"
+    , revisionstr, datestr, argv[0], argv[0]);
     exit(1);
   }
   return res;
@@ -186,6 +279,8 @@ int main(int argc, char **argv)
   setbuf(stdout, 0);
   setbuf(stdin, 0);
   setbuf(stderr, 0);
+  signal(SIGALRM,sighandler_alarm);
+  alarm(ALARMTIME);
 
   if(getargs(argc, argv, &args))
   {
@@ -260,8 +355,10 @@ int main(int argc, char **argv)
     if(args.data)
     {
       int k = 0;
+
       while((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) != -1)
       {
+        alarm(ALARMTIME);
         if(!k)
         {
           if(numbytes < 12 || strncmp("ICY 200 OK\r\n", buf, 12))
