@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.16 2006/04/27 09:44:17 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.17 2006/06/22 11:57:14 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -39,8 +39,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.16 $";
-static char datestr[]     = "$Date: 2006/04/27 09:44:17 $";
+static char revisionstr[] = "$Revision: 1.17 $";
+static char datestr[]     = "$Date: 2006/06/22 11:57:14 $";
 
 struct Args
 {
@@ -88,15 +88,18 @@ static const char *geturl(const char *url, struct Args *args)
     return "URL must start with 'ntrip:'.";
   url += 6; /* skip ntrip: */
 
-  /* scan for mountpoint */
-  args->data = Buffer;
-  while(*url && *url != '@' && *url != '/' && Buffer != Bufend)
-    *(Buffer++) = *(url++);
-  if(Buffer == args->data)
-    return "Mountpoint required.";
-  else if(Buffer >= Bufend-1)
-    return "Parsing buffer too short.";
-  *(Buffer++) = 0;
+  if(*url != '@' && *url != '/')
+  {
+    /* scan for mountpoint */
+    args->data = Buffer;
+    while(*url && *url != '@' && *url != '/' && Buffer != Bufend)
+      *(Buffer++) = *(url++);
+    if(Buffer == args->data)
+      return "Mountpoint required.";
+    else if(Buffer >= Bufend-1)
+      return "Parsing buffer too short.";
+    *(Buffer++) = 0;
+  }
 
   if(*url == '/') /* username and password */
   {
