@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.18 2006/06/22 12:22:02 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.19 2006/07/04 08:05:45 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -39,8 +39,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.18 $";
-static char datestr[]     = "$Date: 2006/06/22 12:22:02 $";
+static char revisionstr[] = "$Revision: 1.19 $";
+static char datestr[]     = "$Date: 2006/07/04 08:05:45 $";
 
 struct Args
 {
@@ -294,7 +294,7 @@ int main(int argc, char **argv)
 
     if(!(he=gethostbyname(args.server)))
     {
-      printf(stderr, "Server name lookup failed for '%s'.\n", args.server);
+      fprintf(stderr, "Server name lookup failed for '%s'.\n", args.server);
       exit(1);
     }
     if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
