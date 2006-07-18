@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.19 2006/07/04 08:05:45 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.20 2006/07/04 12:53:43 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <time.h>
 
 /* The string, which is send as agent in HTTP request */
 #define AGENTSTRING "NTRIP NtripLinuxClient"
@@ -39,8 +40,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.19 $";
-static char datestr[]     = "$Date: 2006/07/04 08:05:45 $";
+static char revisionstr[] = "$Revision: 1.20 $";
+static char datestr[]     = "$Date: 2006/07/04 12:53:43 $";
 
 struct Args
 {
@@ -49,6 +50,7 @@ struct Args
   const char *user;
   const char *password;
   const char *data;
+  int         bitrate;
 };
 
 /* option parsing */
@@ -57,6 +59,7 @@ struct Args
 #else
 #define LONG_OPT(a) a
 static struct option opts[] = {
+{ "bitrate",    no_argument,       0, 'b'},
 { "data",       required_argument, 0, 'd'},
 { "server",     required_argument, 0, 's'},
 { "password",   required_argument, 0, 'p'},
@@ -65,7 +68,7 @@ static struct option opts[] = {
 { "help",       no_argument,       0, 'h'},
 {0,0,0,0}};
 #endif
-#define ARGOPT "-d:hp:r:s:u:"
+#define ARGOPT "-d:bhp:r:s:u:"
 
 #ifdef __GNUC__
 static __attribute__ ((noreturn)) void sighandler_alarm(
@@ -163,6 +166,7 @@ static int getargs(int argc, char **argv, struct Args *args)
   args->user = "";
   args->password = "";
   args->data = 0;
+  args->bitrate = 0;
   help = 0;
 
   do
@@ -177,6 +181,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     case 'u': args->user = optarg; break;
     case 'p': args->password = optarg; break;
     case 'd': args->data = optarg; break;
+    case 'b': args->bitrate = 1; break;
     case 'h': help=1; break;
     case 1:
       {
@@ -219,6 +224,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     " -p " LONG_OPT("--password ") "the login password\n"
     " -r " LONG_OPT("--port     ") "the server port number (default 80)\n"
     " -u " LONG_OPT("--user     ") "the user name\n"
+    " -b " LONG_OPT("--bitrate  ") "output bitrate\n"
     "or using an URL:\n%s ntrip:mountpoint[/username[:password]][@server[:port]]\n"
     , revisionstr, datestr, argv[0], argv[0]);
     exit(1);
@@ -358,6 +364,9 @@ int main(int argc, char **argv)
     if(args.data)
     {
       int k = 0;
+      int starttime = time(0);
+      int lastout = starttime;
+      int totalbytes = 0;
 
       while((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) != -1)
       {
@@ -378,8 +387,25 @@ int main(int argc, char **argv)
         }
         else
         {
+          totalbytes += numbytes;
+          if(totalbytes < 0) /* overflow */
+          {
+            totalbytes = 0;
+            starttime = time(0);
+            lastout = starttime;
+          }
           fwrite(buf, (size_t)numbytes, 1, stdout);
           fflush(stdout);
+          if(args.bitrate)
+          {
+            int t = time(0);
+            if(t > lastout + 60)
+            {
+              lastout = t;
+              fprintf(stderr, "Bitrate is %d/s (%d seconds accumulated).\n",
+              totalbytes/(t-starttime), t-starttime);
+            }
+          }
         }
       }
     }
