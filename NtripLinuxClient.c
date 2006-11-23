@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.20 2006/07/04 12:53:43 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.21 2006/07/18 08:55:30 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -40,8 +40,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.20 $";
-static char datestr[]     = "$Date: 2006/07/04 12:53:43 $";
+static char revisionstr[] = "$Revision: 1.21 $";
+static char datestr[]     = "$Date: 2006/07/18 08:55:30 $";
 
 struct Args
 {
@@ -162,7 +162,7 @@ static int getargs(int argc, char **argv, struct Args *args)
   char *t;
 
   args->server = "www.euref-ip.net";
-  args->port = 80;
+  args->port = 2101;
   args->user = "";
   args->password = "";
   args->data = 0;
@@ -222,7 +222,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     " -d " LONG_OPT("--data     ") "the requested data set\n"
     " -s " LONG_OPT("--server   ") "the server name or address\n"
     " -p " LONG_OPT("--password ") "the login password\n"
-    " -r " LONG_OPT("--port     ") "the server port number (default 80)\n"
+    " -r " LONG_OPT("--port     ") "the server port number (default 2101)\n"
     " -u " LONG_OPT("--user     ") "the user name\n"
     " -b " LONG_OPT("--bitrate  ") "output bitrate\n"
     "or using an URL:\n%s ntrip:mountpoint[/username[:password]][@server[:port]]\n"
