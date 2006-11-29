@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.21 2006/07/18 08:55:30 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.22 2006/11/23 14:39:50 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -40,8 +40,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.21 $";
-static char datestr[]     = "$Date: 2006/07/18 08:55:30 $";
+static char revisionstr[] = "$Revision: 1.22 $";
+static char datestr[]     = "$Date: 2006/11/23 14:39:50 $";
 
 struct Args
 {
@@ -347,14 +347,16 @@ int main(int argc, char **argv)
         fprintf(stderr, "Requested data too long\n");
         exit(1);
       }
-      i += encode(buf+i, MAXDATASIZE-i-5, args.user, args.password);
-      if(i > MAXDATASIZE-5)
+      i += encode(buf+i, MAXDATASIZE-i-4, args.user, args.password);
+      if(i > MAXDATASIZE-4)
       {
         fprintf(stderr, "Username and/or password too long\n");
         exit(1);
       }
-      snprintf(buf+i, 5, "\r\n\r\n");
-      i += 5;
+      buf[i++] = '\r';
+      buf[i++] = '\n';
+      buf[i++] = '\r';
+      buf[i++] = '\n';
     }
     if(send(sockfd, buf, (size_t)i, 0) != i)
     {
