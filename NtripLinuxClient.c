@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.22 2006/11/23 14:39:50 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.23 2006/11/29 10:43:15 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -40,8 +40,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.22 $";
-static char datestr[]     = "$Date: 2006/11/23 14:39:50 $";
+static char revisionstr[] = "$Revision: 1.23 $";
+static char datestr[]     = "$Date: 2006/11/29 10:43:15 $";
 
 struct Args
 {
@@ -49,6 +49,7 @@ struct Args
   int         port;
   const char *user;
   const char *password;
+  const char *nmea;
   const char *data;
   int         bitrate;
 };
@@ -65,10 +66,11 @@ static struct option opts[] = {
 { "password",   required_argument, 0, 'p'},
 { "port",       required_argument, 0, 'r'},
 { "user",       required_argument, 0, 'u'},
+{ "nmea",       required_argument, 0, 'n'},
 { "help",       no_argument,       0, 'h'},
 {0,0,0,0}};
 #endif
-#define ARGOPT "-d:bhp:r:s:u:"
+#define ARGOPT "-d:bhp:r:s:u:n:"
 
 #ifdef __GNUC__
 static __attribute__ ((noreturn)) void sighandler_alarm(
@@ -95,7 +97,7 @@ static const char *geturl(const char *url, struct Args *args)
   {
     /* scan for mountpoint */
     args->data = Buffer;
-    while(*url && *url != '@' && *url != '/' && Buffer != Bufend)
+    while(*url && *url != '@' &&  *url != ';' &&*url != '/' && Buffer != Bufend)
       *(Buffer++) = *(url++);
     if(Buffer == args->data)
       return "Mountpoint required.";
@@ -108,7 +110,7 @@ static const char *geturl(const char *url, struct Args *args)
   {
     ++url;
     args->user = Buffer;
-    while(*url && *url != '@' && *url != ':' && Buffer != Bufend)
+    while(*url && *url != '@' && *url != ';' && *url != ':' && Buffer != Bufend)
       *(Buffer++) = *(url++);
     if(Buffer == args->user)
       return "Username cannot be empty.";
@@ -119,7 +121,7 @@ static const char *geturl(const char *url, struct Args *args)
     if(*url == ':') ++url;
 
     args->password = Buffer;
-    while(*url && *url != '@' && Buffer != Bufend)
+    while(*url && *url != '@' && *url != ';' && Buffer != Bufend)
       *(Buffer++) = *(url++);
     if(Buffer == args->password)
       return "Password cannot be empty.";
@@ -132,7 +134,7 @@ static const char *geturl(const char *url, struct Args *args)
   {
     ++url;
     args->server = Buffer;
-    while(*url && *url != ':' && Buffer != Bufend)
+    while(*url && *url != ':' && *url != ';' && Buffer != Bufend)
       *(Buffer++) = *(url++);
     if(Buffer == args->server)
       return "Servername cannot be empty.";
@@ -144,10 +146,16 @@ static const char *geturl(const char *url, struct Args *args)
     {
       char *s2 = 0;
       args->port = strtol(++url, &s2, 10);
-      if(*s2 || args->port <= 0 || args->port > 0xFFFF)
+      if((*s2 && *s2 != ';') || args->port <= 0 || args->port > 0xFFFF)
         return "Illegal port number.";
       url = s2;
     }
+  }
+  if(*url == ';') /* NMEA */
+  {
+    args->nmea = ++url;
+    while(*url)
+      ++url;
   }
 
   return *url ? "Garbage at end of server string." : 0;
@@ -165,6 +173,7 @@ static int getargs(int argc, char **argv, struct Args *args)
   args->port = 2101;
   args->user = "";
   args->password = "";
+  args->nmea = 0;
   args->data = 0;
   args->bitrate = 0;
   help = 0;
@@ -181,6 +190,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     case 'u': args->user = optarg; break;
     case 'p': args->password = optarg; break;
     case 'd': args->data = optarg; break;
+    case 'n': args->nmea = optarg; break;
     case 'b': args->bitrate = 1; break;
     case 'h': help=1; break;
     case 1:
@@ -357,6 +367,17 @@ int main(int argc, char **argv)
       buf[i++] = '\n';
       buf[i++] = '\r';
       buf[i++] = '\n';
+      if(args.nmea)
+      {
+        int j = snprintf(buf+i, MAXDATASIZE-i, "%s\r\n", args.nmea);
+        if(j >= 0 && i < MAXDATASIZE-i)
+          i += j;
+        else
+        {
+          fprintf(stderr, "NMEA string too long\n");
+          exit(1);
+        }
+      }
     }
     if(send(sockfd, buf, (size_t)i, 0) != i)
     {
