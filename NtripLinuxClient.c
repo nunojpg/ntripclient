@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.24 2007/01/09 08:16:33 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.25 2007/04/04 14:23:47 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -33,6 +33,10 @@
 #include <sys/socket.h>
 #include <time.h>
 
+#ifndef COMPILEDATE
+#define COMPILEDATE " built " __DATE__
+#endif
+
 /* The string, which is send as agent in HTTP request */
 #define AGENTSTRING "NTRIP NtripLinuxClient"
 
@@ -40,8 +44,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.24 $";
-static char datestr[]     = "$Date: 2007/01/09 08:16:33 $";
+static char revisionstr[] = "$Revision: 1.25 $";
+static char datestr[]     = "$Date: 2007/04/04 14:23:47 $";
 
 struct Args
 {
@@ -228,7 +232,7 @@ static int getargs(int argc, char **argv, struct Args *args)
 
   if(!res || help)
   {
-    fprintf(stderr, "Version %s (%s) GPL\nUsage:\n%s -s server -u user ...\n"
+    fprintf(stderr, "Version %s (%s) GPL" COMPILEDATE "\nUsage:\n%s -s server -u user ...\n"
     " -d " LONG_OPT("--data     ") "the requested data set\n"
     " -s " LONG_OPT("--server   ") "the server name or address\n"
     " -p " LONG_OPT("--password ") "the login password\n"
