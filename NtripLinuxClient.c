@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.25 2007/04/04 14:23:47 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.26 2007/04/11 09:08:39 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -44,8 +44,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.25 $";
-static char datestr[]     = "$Date: 2007/04/04 14:23:47 $";
+static char revisionstr[] = "$Revision: 1.26 $";
+static char datestr[]     = "$Date: 2007/04/11 09:08:39 $";
 
 struct Args
 {
@@ -238,8 +238,9 @@ static int getargs(int argc, char **argv, struct Args *args)
     " -p " LONG_OPT("--password ") "the login password\n"
     " -r " LONG_OPT("--port     ") "the server port number (default 2101)\n"
     " -u " LONG_OPT("--user     ") "the user name\n"
+    " -n " LONG_OPT("--nmea     ") "NMEA string for sending to server\n"
     " -b " LONG_OPT("--bitrate  ") "output bitrate\n"
-    "or using an URL:\n%s ntrip:mountpoint[/username[:password]][@server[:port]]\n"
+    "or using an URL:\n%s ntrip:mountpoint[/username[:password]][@server[:port]][;nmea]\n"
     , revisionstr, datestr, argv[0], argv[0]);
     exit(1);
   }
