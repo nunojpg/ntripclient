@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.26 2007/04/11 09:08:39 stoecker Exp $
+  $Id: NtripLinuxClient.c,v 1.27 2007/05/16 14:16:21 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -44,8 +44,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.26 $";
-static char datestr[]     = "$Date: 2007/04/11 09:08:39 $";
+static char revisionstr[] = "$Revision: 1.27 $";
+static char datestr[]     = "$Date: 2007/05/16 14:16:21 $";
 
 struct Args
 {
@@ -375,7 +375,7 @@ int main(int argc, char **argv)
       if(args.nmea)
       {
         int j = snprintf(buf+i, MAXDATASIZE-i, "%s\r\n", args.nmea);
-        if(j >= 0 && i < MAXDATASIZE-i)
+        if(j >= 0 && j < MAXDATASIZE-i)
           i += j;
         else
         {
