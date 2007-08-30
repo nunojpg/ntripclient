@@ -1,5 +1,7 @@
 #!/bin/bash
-# Purpose: Start NtripLinuxClient
+#
+# $Id$
+# Purpose: Start ntripclient
 
 # change these 3 according to your needs
 Stream='FFMT0'
@@ -10,7 +12,7 @@ DateStart=`date -u '+%s'`
 SleepMin=10     # Wait min sec for next reconnect try
 SleepMax=10000  # Wait max sec for next reconnect try
 (while true; do
-  ./NtripLinuxClient -s www.euref-ip.net -r 80 -d $Stream -u $User -p $Password
+  ./ntripclient -s www.euref-ip.net -r 80 -d $Stream -u $User -p $Password
   if test $? -eq 0; then DateStart=`date -u '+%s'`; fi
   DateCurrent=`date -u '+%s'`
   SleepTime=`echo $DateStart $DateCurrent | awk '{printf("%d",($2-$1)*0.02)}'`

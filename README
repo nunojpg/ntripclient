@@ -1,8 +1,8 @@
 ----------------------------------------------------------------------
-                NTRIP Client for Linux/Unix Version
+                NTRIP Client for POSIX systems
 ----------------------------------------------------------------------
 
-Easy example NTRIP client for Linux/Unix.
+Easy example NTRIP client for POSIX systems.
 Copyright (C) 2003-2007 by Dirk Stoecker <soft@dstoecker.de>
     
 This program is free software; you can redistribute it and/or modify
@@ -20,16 +20,16 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 or read http://www.gnu.org/licenses/gpl.txt
 
-Files in NtripLinuxClient.zip
+Files in ntripclient.tgz
 -----------------------------
-NtripLinuxClient.c:          Ntrip Linux/UNIX client source code
-ReadmeLinuxClient.txt:       Readme file for 'NtripLinuxClient'
-StartNtripLinuxClient:       Shell script to start 'NtripLinuxClient'
-makefile:                    Easy makefile to build source
+ntripclient.c:    Ntrip POSIX client source code
+README:           Dokumentation
+startntripclient: Shell script to start client
+makefile:         Easy makefile to build source
 
 Ntrip
 -----
-The NtripLinuxClient is an HTTP client based on 'Networked Transport
+The ntripclient is an HTTP client based on 'Networked Transport
 of RTCM via Internet Protocol' (Ntrip). This is an application-level 
 protocol streaming Global Navigation Satellite System (GNSS) data over 
 the Internet. Ntrip is a generic, stateless protocol based on the 
@@ -48,9 +48,9 @@ NtripServers and NtripCasters. The NtripCaster is the actual HTTP
 server program whereas NtripClient and NtripServer are acting as HTTP 
 clients.
 
-NtripLinuxClient
-----------------
-This Linux/UNIX NtripClient program is written under GNU General Public 
+ntripclient
+-----------
+This POSIX Ntrip client program is written under GNU General Public 
 License in C programming language. The program reads data from an Ntrip 
 Broadcaster and writes on standard output for further redirection 
 of data to a file or COM-port. PLEASE NOTE THAT THIS PROGRAM VERSION
@@ -60,27 +60,26 @@ those intending to write their own client program.
 
 Call the program with following arguments:
 
-NtripLinuxClient -d mountpoint
-                 -s Ntrip Broadcaster IP adress         
-                 -p password
-                 -r Ntrip Broadcaster Port number
-                 -u username
-		 -n NMEA string for sending to server
-		 -b output bitrate
+ntripclient -d mountpoint
+            -s Ntrip Broadcaster IP adress         
+            -p password
+            -r Ntrip Broadcaster Port number
+            -u username
+            -n NMEA string for sending to server
+            -b output bitrate
 
 or using an URL:
-./NtripLinuxClient ntrip:mountpoint[/username[:password]][@server[:port]][;nmea]
-		 
+./ntripclient ntrip:mountpoint[/username[:password]][@server[:port]][;nmea]
+
 
 The argument '-h' will cause a HELP on the screen.
-Without any argument NtripLinuxClient will provide the a table of
+Without any argument ntripclient will provide the a table of
 available resources (source table).
 
 Compilation/Installation
 ------------------------
-Please unzip the archive and copy its contents into an appropriate
-directory. Compile the source code under Linux through entering e.g.
-the command 'cc -o NtripLinuxClient NtripLinuxClient.c'.
+Please extract the archive and copy its contents into an appropriate
+directory. Compile the source code under POSIX systems by calling 'make'.
 
 Registration
 ------------
@@ -100,7 +99,7 @@ www.euref-ip.net. The port number is 80.
 
 Disclaimer
 ----------
-Note that this NtripLinuxClient program is for experimental use
+Note that this ntripclient program is for experimental use
 only. The BKG disclaims any liability nor responsibility to any 
 person or entity with respect to any loss or damage caused, or alleged 
 to be caused, directly or indirectly by the use and application of the 

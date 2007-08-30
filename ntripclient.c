@@ -1,6 +1,6 @@
 /*
-  Easy example NTRIP client for Linux/Unix.
-  $Id: NtripLinuxClient.c,v 1.28 2007/08/23 06:55:36 stoecker Exp $
+  Easy example NTRIP client for POSIX.
+  $Id: ntripclient.c,v 1.29 2007/08/30 07:35:13 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -38,14 +38,14 @@
 #endif
 
 /* The string, which is send as agent in HTTP request */
-#define AGENTSTRING "NTRIP NtripLinuxClient"
+#define AGENTSTRING "NTRIP NtripClientPOSIX"
 
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.28 $";
-static char datestr[]     = "$Date: 2007/08/23 06:55:36 $";
+static char revisionstr[] = "$Revision: 1.29 $";
+static char datestr[]     = "$Date: 2007/08/30 07:35:13 $";
 
 struct Args
 {
