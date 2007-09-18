@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.30 2007/08/30 07:38:24 stoecker Exp $
+  $Id: ntripclient.c,v 1.31 2007/09/18 07:09:07 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -44,8 +44,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.30 $";
-static char datestr[]     = "$Date: 2007/08/30 07:38:24 $";
+static char revisionstr[] = "$Revision: 1.31 $";
+static char datestr[]     = "$Date: 2007/09/18 07:09:07 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -318,7 +318,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     "     2, r, rtsp     NTRIP Version 2.0 Caster in RTSP/RTP mode\n"
     "     3, n, ntrip1   NTRIP Version 1.0 Caster\n"
     "     4, a, auto     automatic detection (default)\n"
-    "or using an URL:\n%s ntrip:mountpoint[/username[:password]][@[server][:port][@proxy[:port]]][;nmea]\n"
+    "or using an URL:\n%s ntrip:data[/user[:password]][@[server][:port][@proxyhost[:proxyport]]][;nmea]\n"
     , revisionstr, datestr, argv[0], argv[0]);
     exit(1);
   }

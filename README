@@ -78,8 +78,7 @@ ntripclient -s server -u user ...
      4, a, auto     automatic detection (default)
 
 or using an URL:
-ntripclient ntrip:mountpoint[/username[:password]][@[server][:port][@proxy[:port]]][;nmea]
-
+ntripclient ntrip:data[/user[:password]][@[server][:port][@proxyhost[:proxyport]]][;nmea]
 
 The argument '-h' will cause a HELP on the screen.
 Without any argument ntripclient will provide the a table of
