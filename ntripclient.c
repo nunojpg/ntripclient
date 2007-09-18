@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.29 2007/08/30 07:35:13 stoecker Exp $
+  $Id: ntripclient.c,v 1.30 2007/08/30 07:38:24 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -44,19 +44,26 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.29 $";
-static char datestr[]     = "$Date: 2007/08/30 07:35:13 $";
+static char revisionstr[] = "$Revision: 1.30 $";
+static char datestr[]     = "$Date: 2007/08/30 07:38:24 $";
+
+enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
 struct Args
 {
   const char *server;
-  int         port;
+  const char *port;
   const char *user;
+  const char *proxyhost;
+  const char *proxyport;
   const char *password;
   const char *nmea;
   const char *data;
   int         bitrate;
+  int         mode;
 };
+
+
 
 /* option parsing */
 #ifdef NO_LONG_OPTS
@@ -69,12 +76,14 @@ static struct option opts[] = {
 { "server",     required_argument, 0, 's'},
 { "password",   required_argument, 0, 'p'},
 { "port",       required_argument, 0, 'r'},
+{ "proxyport",  required_argument, 0, 'R'},
+{ "proxyhost",  required_argument, 0, 'S'},
 { "user",       required_argument, 0, 'u'},
 { "nmea",       required_argument, 0, 'n'},
 { "help",       no_argument,       0, 'h'},
 {0,0,0,0}};
 #endif
-#define ARGOPT "-d:bhp:r:s:u:n:"
+#define ARGOPT "-d:bhp:r:s:u:n:S:R:M:"
 
 #ifdef __GNUC__
 static __attribute__ ((noreturn)) void sighandler_alarm(
@@ -85,6 +94,17 @@ static void sighandler_alarm(int sig)
 {
   fprintf(stderr, "ERROR: more than %d seconds no activity\n", ALARMTIME);
   exit(1);
+}
+
+int stop = 0;
+#ifdef __GNUC__
+static void sighandler_int(int sig __attribute__((__unused__)))
+#else /* __GNUC__ */
+static void sighandler_alarm(int sig)
+#endif /* __GNUC__ */
+{
+  alarm(2);
+  stop = 1;
 }
 
 static const char *geturl(const char *url, struct Args *args)
@@ -137,22 +157,55 @@ static const char *geturl(const char *url, struct Args *args)
   if(*url == '@') /* server */
   {
     ++url;
-    args->server = Buffer;
-    while(*url && *url != ':' && *url != ';' && Buffer != Bufend)
-      *(Buffer++) = *(url++);
-    if(Buffer == args->server)
-      return "Servername cannot be empty.";
-    else if(Buffer >= Bufend-1)
-      return "Parsing buffer too short.";
-    *(Buffer++) = 0;
+    if(*url != '@' && *url != ':')
+    {
+      args->server = Buffer;
+      while(*url && *url != '@' && *url != ':' && *url != ';' && Buffer != Bufend)
+        *(Buffer++) = *(url++);
+      if(Buffer == args->server)
+        return "Servername cannot be empty.";
+      else if(Buffer >= Bufend-1)
+        return "Parsing buffer too short.";
+      *(Buffer++) = 0;
+    }
 
     if(*url == ':')
     {
-      char *s2 = 0;
-      args->port = strtol(++url, &s2, 10);
-      if((*s2 && *s2 != ';') || args->port <= 0 || args->port > 0xFFFF)
-        return "Illegal port number.";
-      url = s2;
+      ++url;
+      args->port = Buffer;
+      while(*url && *url != '@' && *url != ';' && Buffer != Bufend)
+        *(Buffer++) = *(url++);
+      if(Buffer == args->port)
+        return "Port cannot be empty.";
+      else if(Buffer >= Bufend-1)
+        return "Parsing buffer too short.";
+      *(Buffer++) = 0;
+    }
+
+    if(*url == '@') /* proxy */
+    {
+      ++url;
+      args->proxyhost = Buffer;
+      while(*url && *url != ':' && *url != ';' && Buffer != Bufend)
+        *(Buffer++) = *(url++);
+      if(Buffer == args->proxyhost)
+        return "Proxy servername cannot be empty.";
+      else if(Buffer >= Bufend-1)
+        return "Parsing buffer too short.";
+      *(Buffer++) = 0;
+
+      if(*url == ':')
+      {
+        ++url;
+        args->proxyport = Buffer;
+        while(*url && *url != ';' && Buffer != Bufend)
+          *(Buffer++) = *(url++);
+        if(Buffer == args->proxyport)
+          return "Proxy port cannot be empty.";
+        else if(Buffer >= Bufend-1)
+          return "Parsing buffer too short.";
+        *(Buffer++) = 0;
+      }
     }
   }
   if(*url == ';') /* NMEA */
@@ -171,15 +224,17 @@ static int getargs(int argc, char **argv, struct Args *args)
   int getoptr;
   char *a;
   int i = 0, help = 0;
-  char *t;
 
   args->server = "www.euref-ip.net";
-  args->port = 2101;
+  args->port = "2101";
   args->user = "";
   args->password = "";
   args->nmea = 0;
   args->data = 0;
   args->bitrate = 0;
+  args->proxyhost = 0;
+  args->proxyport = "2101";
+  args->mode = AUTO;
   help = 0;
 
   do
@@ -197,6 +252,26 @@ static int getargs(int argc, char **argv, struct Args *args)
     case 'n': args->nmea = optarg; break;
     case 'b': args->bitrate = 1; break;
     case 'h': help=1; break;
+    case 'r': args->port = optarg; break;
+    case 'S': args->proxyhost = optarg; break;
+    case 'R': args->proxyport = optarg; break;
+    case 'M':
+      args->mode = 0;
+      if (!strcmp(optarg,"n") || !strcmp(optarg,"ntrip1"))
+        args->mode = NTRIP1;
+      else if(!strcmp(optarg,"h") || !strcmp(optarg,"http"))
+        args->mode = HTTP;
+      else if(!strcmp(optarg,"r") || !strcmp(optarg,"rtsp"))
+        args->mode = RTSP;
+      else if(!strcmp(optarg,"a") || !strcmp(optarg,"auto"))
+        args->mode = AUTO;
+      else args->mode = atoi(optarg);
+      if((args->mode == 0) || (args->mode >= END))
+      {
+        fprintf(stderr, "Mode %s unknown\n", optarg);
+        res = 0;
+      }
+      break;
     case 1:
       {
         const char *err;
@@ -206,11 +281,6 @@ static int getargs(int argc, char **argv, struct Args *args)
           res = 0;
         }
       }
-      break;
-    case 'r': 
-      args->port = strtoul(optarg, &t, 10);
-      if((t && *t) || args->port < 1 || args->port > 65535)
-        res = 0;
       break;
     case -1: break;
     }
@@ -233,14 +303,22 @@ static int getargs(int argc, char **argv, struct Args *args)
   if(!res || help)
   {
     fprintf(stderr, "Version %s (%s) GPL" COMPILEDATE "\nUsage:\n%s -s server -u user ...\n"
-    " -d " LONG_OPT("--data     ") "the requested data set\n"
-    " -s " LONG_OPT("--server   ") "the server name or address\n"
-    " -p " LONG_OPT("--password ") "the login password\n"
-    " -r " LONG_OPT("--port     ") "the server port number (default 2101)\n"
-    " -u " LONG_OPT("--user     ") "the user name\n"
-    " -n " LONG_OPT("--nmea     ") "NMEA string for sending to server\n"
-    " -b " LONG_OPT("--bitrate  ") "output bitrate\n"
-    "or using an URL:\n%s ntrip:mountpoint[/username[:password]][@server[:port]][;nmea]\n"
+    " -d " LONG_OPT("--data      ") "the requested data set\n"
+    " -s " LONG_OPT("--server    ") "the server name or address\n"
+    " -p " LONG_OPT("--password  ") "the login password\n"
+    " -r " LONG_OPT("--port      ") "the server port number (default 2101)\n"
+    " -u " LONG_OPT("--user      ") "the user name\n"
+    " -n " LONG_OPT("--nmea      ") "NMEA string for sending to server\n"
+    " -b " LONG_OPT("--bitrate   ") "output bitrate\n"
+    " -S " LONG_OPT("--proxyhost ") "proxy name or address\n"
+    " -R " LONG_OPT("--proxyport ") "proxy port, optional (default 2101)\n"
+    " -M " LONG_OPT("--mode      ") "mode for data request\n"
+    "     Valid modes are:\n"
+    "     1, h, http     NTRIP Version 2.0 Caster in TCP/IP mode\n"
+    "     2, r, rtsp     NTRIP Version 2.0 Caster in RTSP/RTP mode\n"
+    "     3, n, ntrip1   NTRIP Version 1.0 Caster\n"
+    "     4, a, auto     automatic detection (default)\n"
+    "or using an URL:\n%s ntrip:mountpoint[/username[:password]][@[server][:port][@proxy[:port]]][;nmea]\n"
     , revisionstr, datestr, argv[0], argv[0]);
     exit(1);
   }
@@ -304,148 +382,526 @@ int main(int argc, char **argv)
   setbuf(stdin, 0);
   setbuf(stderr, 0);
   signal(SIGALRM,sighandler_alarm);
+  signal(SIGINT,sighandler_int);
   alarm(ALARMTIME);
 
   if(getargs(argc, argv, &args))
   {
-    int i, sockfd, numbytes;  
-    char buf[MAXDATASIZE];
-    struct hostent *he;
-    struct sockaddr_in their_addr; /* connector's address information */
+    int sleeptime = 0;
 
-    if(!(he=gethostbyname(args.server)))
+    do
     {
-      fprintf(stderr, "Server name lookup failed for '%s'.\n", args.server);
-      exit(1);
-    }
-    if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-    {
-      perror("socket");
-      exit(1);
-    }
-    their_addr.sin_family = AF_INET;    /* host byte order */
-    their_addr.sin_port = htons(args.port);  /* short, network byte order */
-    their_addr.sin_addr = *((struct in_addr *)he->h_addr);
-    memset(&(their_addr.sin_zero), '\0', 8);
-    if(connect(sockfd, (struct sockaddr *)&their_addr,
-    sizeof(struct sockaddr)) == -1)
-    {
-      perror("connect");
-      exit(1);
-    }
-
-    if(!args.data)
-    {
-      i = snprintf(buf, MAXDATASIZE,
-      "GET / HTTP/1.0\r\n"
-      "User-Agent: %s/%s\r\n"
-#ifdef UNUSED
-      "Accept: */*\r\n"
-      "Connection: close\r\n"
-#endif
-      "\r\n"
-      , AGENTSTRING, revisionstr);
-    }
-    else
-    {
-      i=snprintf(buf, MAXDATASIZE-40, /* leave some space for login */
-      "GET /%s HTTP/1.0\r\n"
-      "User-Agent: %s/%s\r\n"
-#ifdef UNUSED
-      "Accept: */*\r\n"
-      "Connection: close\r\n"
-#endif
-      "Authorization: Basic "
-      , args.data, AGENTSTRING, revisionstr);
-      if(i > MAXDATASIZE-40 || i < 0) /* second check for old glibc */
+      int sockfd, numbytes;  
+      char buf[MAXDATASIZE];
+      struct sockaddr_in their_addr; /* connector's address information */
+      struct hostent *he;
+      struct servent *se;
+      const char *server, *port, *proxyserver = 0;
+      char proxyport[6];
+      char *b;
+      long i;
+      if(sleeptime)
       {
-        fprintf(stderr, "Requested data too long\n");
-        exit(1);
+        sleep(sleeptime);
+        sleeptime += 2;
       }
-      i += encode(buf+i, MAXDATASIZE-i-4, args.user, args.password);
-      if(i > MAXDATASIZE-4)
+      else
       {
-        fprintf(stderr, "Username and/or password too long\n");
-        exit(1);
+        sleeptime = 1;
       }
-      buf[i++] = '\r';
-      buf[i++] = '\n';
-      buf[i++] = '\r';
-      buf[i++] = '\n';
-      if(args.nmea)
+      alarm(ALARMTIME);
+      if(args.proxyhost)
       {
-        int j = snprintf(buf+i, MAXDATASIZE-i, "%s\r\n", args.nmea);
-        if(j >= 0 && j < MAXDATASIZE-i)
-          i += j;
+        int p;
+        if((i = strtol(args.port, &b, 10)) && (!b || !*b))
+          p = i;
+        else if(!(se = getservbyname(args.port, 0)))
+        {
+          fprintf(stderr, "Can't resolve port %s.", args.port);
+          exit(1);
+        }
         else
         {
-          fprintf(stderr, "NMEA string too long\n");
+          p = ntohs(se->s_port);
+        }
+        snprintf(proxyport, sizeof(proxyport), "%d", p);
+        port = args.proxyport;
+        proxyserver = args.server;
+        server = args.proxyhost;
+      }
+      else
+      {
+        server = args.server;
+        port = args.port;
+      }
+
+      memset(&their_addr, 0, sizeof(struct sockaddr_in));
+      if((i = strtol(port, &b, 10)) && (!b || !*b))
+        their_addr.sin_port = htons(i);
+      else if(!(se = getservbyname(port, 0)))
+      {
+        fprintf(stderr, "Can't resolve port %s.", port);
+        exit(1);
+      }
+      else
+      {
+        their_addr.sin_port = se->s_port;
+      }
+      if(!(he=gethostbyname(server)))
+      {
+        fprintf(stderr, "Server name lookup failed for '%s'.\n", server);
+        exit(1);
+      }
+      if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+      {
+        perror("socket");
+        exit(1);
+      }
+      their_addr.sin_family = AF_INET;
+      their_addr.sin_addr = *((struct in_addr *)he->h_addr);
+
+      if(args.data && args.mode == RTSP)
+      {
+        struct sockaddr_in local;
+        int sockudp, localport;
+        int cseq = 1;
+        socklen_t len;
+
+        if((sockudp = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+        {
+          perror("socket");
+          exit(1);
+        }
+        /* fill structure with local address information for UDP */
+        memset(&local, 0, sizeof(local));
+        local.sin_family = AF_INET;  	
+        local.sin_port = htons(0);
+        local.sin_addr.s_addr = htonl(INADDR_ANY); 
+        len = sizeof(local);
+        /* bind() in order to get a random RTP client_port */ 
+        if((bind(sockudp, (struct sockaddr *)&local, len)) < 0)
+        {
+          perror("bind");
+          exit(1);
+        }
+        if((getsockname(sockudp, (struct sockaddr*)&local, &len)) != -1) 
+        {
+          localport = ntohs(local.sin_port); 
+        }
+        else
+        {
+          perror("local access failed"); 
+          exit(1);
+        }
+        if(connect(sockfd, (struct sockaddr *)&their_addr,
+        sizeof(struct sockaddr)) == -1)
+        {
+          perror("connect");
+          exit(1);
+        }
+        i=snprintf(buf, MAXDATASIZE-40, /* leave some space for login */
+        "SETUP rtsp://%s%s%s/%s RTSP/1.0\r\n" 	        
+        "CSeq: %d\r\n"		
+        "Ntrip-Version: Ntrip/2.0\r\n"
+        "Ntrip-Component: Ntripclient\r\n"
+        "User-Agent: %s/%s\r\n"
+        "Transport: RTP/GNSS;unicast;client_port=%u\r\n"
+        "Authorization: Basic ",
+        args.server, proxyserver ? ":" : "", proxyserver ? args.port : "",
+        args.data, cseq++, AGENTSTRING, revisionstr, localport);
+        if(i > MAXDATASIZE-40 || i < 0) /* second check for old glibc */
+        {
+          fprintf(stderr, "Requested data too long\n");
+          exit(1);
+        }
+        i += encode(buf+i, MAXDATASIZE-i-4, args.user, args.password);
+        if(i > MAXDATASIZE-4)
+        {
+          fprintf(stderr, "Username and/or password too long\n");
+          exit(1);
+        }
+        buf[i++] = '\r';
+        buf[i++] = '\n';
+        buf[i++] = '\r';
+        buf[i++] = '\n';
+        if(args.nmea)
+        {
+          int j = snprintf(buf+i, MAXDATASIZE-i, "%s\r\n", args.nmea);
+          if(j >= 0 && j < MAXDATASIZE-i)
+            i += j;
+          else
+          {
+            fprintf(stderr, "NMEA string too long\n");
+            exit(1);
+          }
+        }
+        if(send(sockfd, buf, (size_t)i, 0) != i)
+        {
+          perror("send");
+          exit(1);
+        }
+        if((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) != -1)
+        {
+          if(numbytes >= 17 && !strncmp(buf, "RTSP/1.0 200 OK\r\n", 17))
+	  {
+            int serverport = 0, session = 0;
+            const char *portcheck = "server_port=";
+            const char *sessioncheck = "session: ";
+            int l = strlen(portcheck)-1;
+            int j=0;
+            for(i = 0; j != l && i < numbytes-l; ++i)
+            {
+              for(j = 0; j < l && tolower(buf[i+j]) == portcheck[j]; ++j)
+                ;
+            }
+            if(i == numbytes-l)
+            {
+              fprintf(stderr, "No server port number found\n");
+              exit(1);
+            }
+            else
+            {
+              i+=l;
+              while(i < numbytes && buf[i] >= '0' && buf[i] <= '9')
+                serverport = serverport * 10 + buf[i++]-'0';
+              if(buf[i] != '\r' && buf[i] != ';')
+              {
+                fprintf(stderr, "Could not extract server port\n");
+                exit(1);
+              }
+            }
+            l = strlen(sessioncheck)-1;
+            j=0;
+            for(i = 0; j != l && i < numbytes-l; ++i)
+            {
+              for(j = 0; j < l && tolower(buf[i+j]) == sessioncheck[j]; ++j)
+                ;
+            }
+            if(i == numbytes-l)
+            {
+              fprintf(stderr, "No session number found\n");
+              exit(1);
+            }
+            else
+            {
+              i+=l;
+              while(i < numbytes && buf[i] >= '0' && buf[i] <= '9')
+                session = session * 10 + buf[i++]-'0';
+              if(buf[i] != '\r')
+              {
+                fprintf(stderr, "Could not extract session number\n");
+                exit(1);
+              }
+            }
+
+            i = snprintf(buf, MAXDATASIZE,
+            "PLAY rtsp://%s%s%s/%s RTSP/1.0\r\n"	        
+            "CSeq: %d\r\n"
+            "Session: %d\r\n"
+            "\r\n", 
+            args.server, proxyserver ? ":" : "", proxyserver ? args.port : "",
+            args.data, cseq++, session);
+
+            if(i > MAXDATASIZE || i < 0) /* second check for old glibc */
+            {
+              fprintf(stderr, "Requested data too long\n");
+              exit(1);
+            }
+            if(send(sockfd, buf, (size_t)i, 0) != i)
+            {
+              perror("send");
+              exit(1);
+            }
+            if((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) != -1)
+            {
+              if(numbytes >= 17 && !strncmp(buf, "RTSP/1.0 200 OK\r\n", 17))
+              {
+                struct sockaddr_in addrRTP;
+                /* fill structure with caster address information for UDP */
+                memset(&addrRTP, 0, sizeof(addrRTP));
+                addrRTP.sin_family = AF_INET;  
+                addrRTP.sin_port   = htons(serverport);
+                their_addr.sin_addr = *((struct in_addr *)he->h_addr);
+                len = sizeof(addrRTP);
+                int ts = 0;
+                int sn = 0;
+                int ssrc = 0;
+                int init = 0;
+                int u, v, w;
+                while(!stop && (i = recvfrom(sockudp, buf, 1526, 0,
+                (struct sockaddr*) &addrRTP, &len)) > 0)
+                {
+                  alarm(ALARMTIME);
+                  if(i >= 12+1 && (unsigned char)buf[0] == (2 << 6) && buf[1] == 0x60)
+                  {
+                    u= ((unsigned char)buf[2]<<8)+(unsigned char)buf[3];
+                    v = ((unsigned char)buf[4]<<24)+((unsigned char)buf[5]<<16)
+                    +((unsigned char)buf[6]<<8)+(unsigned char)buf[7];
+                    w = ((unsigned char)buf[8]<<24)+((unsigned char)buf[9]<<16)
+                    +((unsigned char)buf[10]<<8)+(unsigned char)buf[11];
+
+                    if(init)
+                    {
+                      if(u < -30000 && sn > 30000) sn -= 0xFFFF;
+                      if(ssrc != w || ts > v)
+                      {
+                        fprintf(stderr, "Illegal UDP data received.\n");
+                        exit(1);
+                      }
+                      if(u > sn) /* don't show out-of-order packets */
+                        fwrite(buf+12, (size_t)i-12, 1, stdout);
+                    }
+                    sn = u; ts = v; ssrc = w; init = 1;
+                  }
+                  else
+                  {
+                    fprintf(stderr, "Illegal UDP header.\n");
+                    exit(1);
+                  }
+                }
+              }
+              i = snprintf(buf, MAXDATASIZE,
+              "TEARDOWN rtsp://%s%s%s/%s RTSP/1.0\r\n"	        
+              "CSeq: %d\r\n"
+              "Session: %d\r\n"
+              "\r\n", 
+              args.server, proxyserver ? ":" : "", proxyserver ? args.port : "",
+              args.data, cseq++, session);
+
+              if(i > MAXDATASIZE || i < 0) /* second check for old glibc */
+              {
+                fprintf(stderr, "Requested data too long\n");
+                exit(1);
+              }
+              if(send(sockfd, buf, (size_t)i, 0) != i)
+              {
+                perror("send");
+                exit(1);
+              }
+            }
+            else
+            {
+              fprintf(stderr, "Could not start data stream.\n");
+              exit(1);
+            }
+          }
+          else
+          {
+            fprintf(stderr, "Could not setup initial control connection.\n");
+            exit(1);
+          }
+        }
+        else
+        {
+          perror("recv");
           exit(1);
         }
       }
-    }
-    if(send(sockfd, buf, (size_t)i, 0) != i)
-    {
-      perror("send");
-      exit(1);
-    }
-    if(args.data)
-    {
-      int k = 0;
-      int starttime = time(0);
-      int lastout = starttime;
-      int totalbytes = 0;
-
-      while((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) != -1)
+      else
       {
-        alarm(ALARMTIME);
-        if(!k)
+        if(connect(sockfd, (struct sockaddr *)&their_addr,
+        sizeof(struct sockaddr)) == -1)
         {
-          if(numbytes < 12 || strncmp("ICY 200 OK\r\n", buf, 12))
-          {
-            fprintf(stderr, "Could not get the requested data: ");
-            for(k = 0; k < numbytes && buf[k] != '\n' && buf[k] != '\r'; ++k)
-            {
-              fprintf(stderr, "%c", isprint(buf[k]) ? buf[k] : '.');
-            }
-            fprintf(stderr, "\n");
-            exit(1);
-          }
-          ++k;
+          perror("connect");
+          exit(1);
+        }
+        if(!args.data)
+        {
+          i = snprintf(buf, MAXDATASIZE,
+          "GET %s%s%s%s/ HTTP/1.0\r\n"
+          "Host: %s\r\n%s"
+          "User-Agent: %s/%s\r\n"
+          "\r\n"
+          , proxyserver ? "http://" : "", proxyserver ? proxyserver : "",
+          proxyserver ? ":" : "", proxyserver ? proxyport : "",
+          args.server, args.mode == NTRIP1 ? "" : "Ntrip-Version: Ntrip/2.0\r\n",
+          AGENTSTRING, revisionstr);
         }
         else
         {
-          totalbytes += numbytes;
-          if(totalbytes < 0) /* overflow */
+          i=snprintf(buf, MAXDATASIZE-40, /* leave some space for login */
+          "GET %s%s%s%s/%s HTTP/1.0\r\n"
+          "Host: %s\r\n%s"
+          "User-Agent: %s/%s\r\n"
+          "Authorization: Basic "
+          , proxyserver ? "http://" : "", proxyserver ? proxyserver : "",
+          proxyserver ? ":" : "", proxyserver ? proxyport : "",
+          args.data, args.server,
+          args.mode == NTRIP1 ? "" : "Ntrip-Version: Ntrip/2.0\r\n",
+          AGENTSTRING, revisionstr);
+          if(i > MAXDATASIZE-40 || i < 0) /* second check for old glibc */
           {
-            totalbytes = 0;
-            starttime = time(0);
-            lastout = starttime;
+            fprintf(stderr, "Requested data too long\n");
+            exit(1);
           }
-          fwrite(buf, (size_t)numbytes, 1, stdout);
-          fflush(stdout);
-          if(args.bitrate)
+          i += encode(buf+i, MAXDATASIZE-i-4, args.user, args.password);
+          if(i > MAXDATASIZE-4)
           {
-            int t = time(0);
-            if(t > lastout + 60)
+            fprintf(stderr, "Username and/or password too long\n");
+            exit(1);
+          }
+          buf[i++] = '\r';
+          buf[i++] = '\n';
+          buf[i++] = '\r';
+          buf[i++] = '\n';
+          if(args.nmea)
+          {
+            int j = snprintf(buf+i, MAXDATASIZE-i, "%s\r\n", args.nmea);
+            if(j >= 0 && j < MAXDATASIZE-i)
+              i += j;
+            else
             {
-              lastout = t;
-              fprintf(stderr, "Bitrate is %dbyte/s (%d seconds accumulated).\n",
-              totalbytes/(t-starttime), t-starttime);
+              fprintf(stderr, "NMEA string too long\n");
+              exit(1);
             }
           }
         }
-      }
-    }
-    else
-    {
-      while((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) > 0)
-      {
-        fwrite(buf, (size_t)numbytes, 1, stdout);
-      }
-    }
+        if(send(sockfd, buf, (size_t)i, 0) != i)
+        {
+          perror("send");
+          exit(1);
+        }
+        if(args.data)
+        {
+          int k = 0;
+          int chunkymode = 0;
+          int starttime = time(0);
+          int lastout = starttime;
+          int totalbytes = 0;
+          int chunksize = 0;
 
-    close(sockfd);
+          while(!stop && (numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) != -1)
+          {
+            alarm(ALARMTIME);
+            if(!k)
+            {
+              if(numbytes > 17 && (!strncmp(buf, "HTTP/1.1 200 OK\r\n", 17)
+              || !strncmp(buf, "HTTP/1.0 200 OK\r\n", 17)))
+	      {
+                const char *datacheck = "Content-Type: gnss/data\r\n";
+                const char *chunkycheck = "Transfer-Encoding: chunked\r\n";
+                int l = strlen(datacheck)-1;
+                int j=0;
+                for(i = 0; j != l && i < numbytes-l; ++i)
+                {
+                  for(j = 0; j < l && buf[i+j] == datacheck[j]; ++j)
+                    ;
+                }
+                if(i == numbytes-l)
+                {
+                  fprintf(stderr, "No 'Content-Type: gnss/data' found\n");
+                  exit(1);
+                }
+                l = strlen(chunkycheck)-1;
+                j=0;
+                for(i = 0; j != l && i < numbytes-l; ++i)
+                {
+                  for(j = 0; j < l && buf[i+j] == chunkycheck[j]; ++j)
+                    ;
+                }
+                if(i < numbytes-l)
+                  chunkymode = 1;
+	      }
+              else if(numbytes < 12 || strncmp("ICY 200 OK\r\n", buf, 12))
+              {
+                fprintf(stderr, "Could not get the requested data: ");
+                for(k = 0; k < numbytes && buf[k] != '\n' && buf[k] != '\r'; ++k)
+                {
+                  fprintf(stderr, "%c", isprint(buf[k]) ? buf[k] : '.');
+                }
+                fprintf(stderr, "\n");
+                exit(1);
+              }
+              else if(args.mode != NTRIP1)
+              {
+                fprintf(stderr, "NTRIP version 2 HTTP connection failed%s.\n",
+                args.mode == AUTO ? ", falling back to NTRIP1" : "");
+                if(args.mode == HTTP)
+                  exit(1);
+              }
+              ++k;
+            }
+            else
+            {
+              sleeptime = 0;
+              if(chunkymode)
+              {
+                int stop = 0;
+                int pos = 0;
+                while(!stop && pos < numbytes)
+                {
+                  switch(chunkymode)
+                  {
+                  case 1: /* reading number starts */
+                    chunksize = 0;
+                    ++chunkymode; /* no break */
+                  case 2: /* during reading number */
+                    i = buf[pos++];
+                    if(i >= '0' && i <= '9') chunksize = chunksize*16+i-'0';
+                    else if(i >= 'a' && i <= 'f') chunksize = chunksize*16+i-'a'+10;
+                    else if(i >= 'A' && i <= 'F') chunksize = chunksize*16+i-'A'+10;
+                    else if(i == '\r') ++chunkymode;
+                    else stop = 1;
+                    break;
+                  case 3: /* scanning for return */
+                    if(buf[pos++] == '\n') chunkymode = chunksize ? 4 : 1;
+                    else stop = 1;
+                    break;
+                  case 4: /* output data */
+                    i = numbytes-pos;
+                    if(i > chunksize) i = chunksize;
+                    fwrite(buf+pos, (size_t)i, 1, stdout);
+                    totalbytes += i;
+                    chunksize -= i;
+                    pos += i;
+                    if(!chunksize)
+                      chunkymode = 1;
+                    break;
+                  }
+                }
+                if(stop)
+                {
+                  fprintf(stderr, "Error in chunky transfer encoding\n");
+                  break;
+                }
+              }
+              else
+              {
+                totalbytes += numbytes;
+                fwrite(buf, (size_t)numbytes, 1, stdout);
+              }
+              fflush(stdout);
+              if(totalbytes < 0) /* overflow */
+              {
+                totalbytes = 0;
+                starttime = time(0);
+                lastout = starttime;
+              }
+              if(args.bitrate)
+              {
+                int t = time(0);
+                if(t > lastout + 60)
+                {
+                  lastout = t;
+                  fprintf(stderr, "Bitrate is %dbyte/s (%d seconds accumulated).\n",
+                  totalbytes/(t-starttime), t-starttime);
+                }
+              }
+            }
+          }
+        }
+        else
+        {
+          sleeptime = 0;
+          while(!stop && (numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) > 0)
+          {
+            alarm(ALARMTIME);
+            fwrite(buf, (size_t)numbytes, 1, stdout);
+          }
+        }
+        close(sockfd);
+      }
+    } while(args.data && !stop);
   }
   return 0;
 }
