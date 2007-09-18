@@ -98,7 +98,7 @@ data streams (mountpoints) the user needs a user-ID and a
 user password. Authorization can be provided for a single stream,
 for a group of streams (network) or for all available streams.
 Currently, registration can be requested via the registration form
-on http://igs.ifag.de/ntrip/ntrip_register.htm.
+on http://igs.bkg.bund.de/index_ntrip_reg.htm
 
 Ntrip Broadaster Address and Port
 ---------------------------------
@@ -115,5 +115,5 @@ Ntrip technology.
 
 Further Information
 -------------------
-http://igs.ifag.de/index_ntrip.htm
+http://igs.bkg.bund.de/index_ntrip.htm
 euref-ip@bkg.bund.de
