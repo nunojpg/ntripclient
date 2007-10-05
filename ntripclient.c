@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.31 2007/09/18 07:09:07 stoecker Exp $
+  $Id: ntripclient.c,v 1.32 2007/09/18 10:39:19 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -44,8 +44,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.31 $";
-static char datestr[]     = "$Date: 2007/09/18 07:09:07 $";
+static char revisionstr[] = "$Revision: 1.32 $";
+static char datestr[]     = "$Date: 2007/09/18 10:39:19 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -107,11 +107,35 @@ static void sighandler_alarm(int sig)
   stop = 1;
 }
 
+static const char *encodeurl(const char *req)
+{
+  char *h = "0123456789abcdef";
+  static char buf[128];
+  char *urlenc = buf;
+  char *bufend = buf + sizeof(buf);
+
+  while(*req && urlenc != bufend)
+  {
+    if(isalnum(*req) 
+    || *req == '-' || *req == '_' || *req == '.')
+      *urlenc++ = *req++;
+    else
+    {
+      *urlenc++ = '%';
+      *urlenc++ = h[*req >> 4];
+      *urlenc++ = h[*req & 0x0f];
+      *req++;
+    }
+  } 
+  return buf;
+}
+
 static const char *geturl(const char *url, struct Args *args)
 {
   static char buf[1000];
   static char *Buffer = buf;
   static char *Bufend = buf+sizeof(buf);
+  char *h = "0123456789abcdef";
 
   if(strncmp("ntrip:", url, 6))
     return "URL must start with 'ntrip:'.";
@@ -121,8 +145,26 @@ static const char *geturl(const char *url, struct Args *args)
   {
     /* scan for mountpoint */
     args->data = Buffer;
-    while(*url && *url != '@' &&  *url != ';' &&*url != '/' && Buffer != Bufend)
-      *(Buffer++) = *(url++);
+    if(*url != '?')
+    {
+       while(*url && *url != '@' &&  *url != ';' && *url != '/' && Buffer != Bufend)
+         *(Buffer++) = *(url++);
+    }
+    else
+    {
+       while(*url && *url != '@' &&  *url != '/' && Buffer != Bufend) 
+       {
+          if(isalnum(*url) || *url == '-' || *url == '_' || *url == '.')
+            *Buffer++ = *url++;
+          else
+          {
+            *Buffer++ = '%';
+            *Buffer++ = h[*url >> 4];
+            *Buffer++ = h[*url & 0x0f];
+            *url++;
+          }      
+       }
+    }
     if(Buffer == args->data)
       return "Mountpoint required.";
     else if(Buffer >= Bufend-1)
@@ -248,7 +290,12 @@ static int getargs(int argc, char **argv, struct Args *args)
     case 's': args->server = optarg; break;
     case 'u': args->user = optarg; break;
     case 'p': args->password = optarg; break;
-    case 'd': args->data = optarg; break;
+    case 'd':
+       if(*optarg == '?') 
+         args->data = encodeurl(optarg);
+       else 
+         args->data = optarg; 
+     break;
     case 'n': args->nmea = optarg; break;
     case 'b': args->bitrate = 1; break;
     case 'h': help=1; break;
@@ -388,7 +435,6 @@ int main(int argc, char **argv)
   if(getargs(argc, argv, &args))
   {
     int sleeptime = 0;
-
     do
     {
       int sockfd, numbytes;  
@@ -434,7 +480,6 @@ int main(int argc, char **argv)
         server = args.server;
         port = args.port;
       }
-
       memset(&their_addr, 0, sizeof(struct sockaddr_in));
       if((i = strtol(port, &b, 10)) && (!b || !*b))
         their_addr.sin_port = htons(i);
@@ -459,8 +504,8 @@ int main(int argc, char **argv)
       }
       their_addr.sin_family = AF_INET;
       their_addr.sin_addr = *((struct in_addr *)he->h_addr);
-
-      if(args.data && args.mode == RTSP)
+      
+      if(args.data && *args.data != '%' && args.mode == RTSP)
       {
         struct sockaddr_in local;
         int sockudp, localport;
@@ -761,7 +806,7 @@ int main(int argc, char **argv)
           perror("send");
           exit(1);
         }
-        if(args.data)
+        if(args.data && *args.data != '%')
         {
           int k = 0;
           int chunkymode = 0;
@@ -901,7 +946,7 @@ int main(int argc, char **argv)
         }
         close(sockfd);
       }
-    } while(args.data && !stop);
+    } while(args.data && *args.data != '%' && !stop);
   }
   return 0;
 }
