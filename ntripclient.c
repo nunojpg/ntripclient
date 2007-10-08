@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.32 2007/09/18 10:39:19 stoecker Exp $
+  $Id: ntripclient.c,v 1.33 2007/10/05 15:40:24 stuerze Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -44,8 +44,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.32 $";
-static char datestr[]     = "$Date: 2007/09/18 10:39:19 $";
+static char revisionstr[] = "$Revision: 1.33 $";
+static char datestr[]     = "$Date: 2007/10/05 15:40:24 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -80,6 +80,7 @@ static struct option opts[] = {
 { "proxyhost",  required_argument, 0, 'S'},
 { "user",       required_argument, 0, 'u'},
 { "nmea",       required_argument, 0, 'n'},
+{ "mode",       required_argument, 0, 'M'},
 { "help",       no_argument,       0, 'h'},
 {0,0,0,0}};
 #endif
@@ -112,9 +113,9 @@ static const char *encodeurl(const char *req)
   char *h = "0123456789abcdef";
   static char buf[128];
   char *urlenc = buf;
-  char *bufend = buf + sizeof(buf);
+  char *bufend = buf + sizeof(buf) - 3;
 
-  while(*req && urlenc != bufend)
+  while(*req && urlenc < bufend)
   {
     if(isalnum(*req) 
     || *req == '-' || *req == '_' || *req == '.')
@@ -126,7 +127,8 @@ static const char *encodeurl(const char *req)
       *urlenc++ = h[*req & 0x0f];
       *req++;
     }
-  } 
+  }
+  *urlenc = 0;
   return buf;
 }
 
@@ -291,7 +293,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     case 'u': args->user = optarg; break;
     case 'p': args->password = optarg; break;
     case 'd':
-       if(*optarg == '?') 
+       if(optarg && *optarg == '?') 
          args->data = encodeurl(optarg);
        else 
          args->data = optarg; 
