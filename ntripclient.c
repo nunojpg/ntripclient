@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.33 2007/10/05 15:40:24 stuerze Exp $
+  $Id: ntripclient.c,v 1.34 2007/10/08 08:03:19 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -44,8 +44,8 @@
 #define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.33 $";
-static char datestr[]     = "$Date: 2007/10/05 15:40:24 $";
+static char revisionstr[] = "$Revision: 1.34 $";
+static char datestr[]     = "$Date: 2007/10/08 08:03:19 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -73,6 +73,7 @@ struct Args
 static struct option opts[] = {
 { "bitrate",    no_argument,       0, 'b'},
 { "data",       required_argument, 0, 'd'},
+{ "mountpoint", required_argument, 0, 'm'},
 { "server",     required_argument, 0, 's'},
 { "password",   required_argument, 0, 'p'},
 { "port",       required_argument, 0, 'r'},
@@ -84,7 +85,7 @@ static struct option opts[] = {
 { "help",       no_argument,       0, 'h'},
 {0,0,0,0}};
 #endif
-#define ARGOPT "-d:bhp:r:s:u:n:S:R:M:"
+#define ARGOPT "-d:m:bhp:r:s:u:n:S:R:M:"
 
 #ifdef __GNUC__
 static __attribute__ ((noreturn)) void sighandler_alarm(
@@ -293,6 +294,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     case 'u': args->user = optarg; break;
     case 'p': args->password = optarg; break;
     case 'd':
+    case 'm':
        if(optarg && *optarg == '?') 
          args->data = encodeurl(optarg);
        else 
@@ -352,22 +354,22 @@ static int getargs(int argc, char **argv, struct Args *args)
   if(!res || help)
   {
     fprintf(stderr, "Version %s (%s) GPL" COMPILEDATE "\nUsage:\n%s -s server -u user ...\n"
-    " -d " LONG_OPT("--data      ") "the requested data set\n"
-    " -s " LONG_OPT("--server    ") "the server name or address\n"
-    " -p " LONG_OPT("--password  ") "the login password\n"
-    " -r " LONG_OPT("--port      ") "the server port number (default 2101)\n"
-    " -u " LONG_OPT("--user      ") "the user name\n"
-    " -n " LONG_OPT("--nmea      ") "NMEA string for sending to server\n"
-    " -b " LONG_OPT("--bitrate   ") "output bitrate\n"
-    " -S " LONG_OPT("--proxyhost ") "proxy name or address\n"
-    " -R " LONG_OPT("--proxyport ") "proxy port, optional (default 2101)\n"
-    " -M " LONG_OPT("--mode      ") "mode for data request\n"
+    " -m " LONG_OPT("--mountpoint ") "the requested data set or sourcetable filtering criteria\n"
+    " -s " LONG_OPT("--server     ") "the server name or address\n"
+    " -p " LONG_OPT("--password   ") "the login password\n"
+    " -r " LONG_OPT("--port       ") "the server port number (default 2101)\n"
+    " -u " LONG_OPT("--user       ") "the user name\n"
+    " -n " LONG_OPT("--nmea       ") "NMEA string for sending to server\n"
+    " -b " LONG_OPT("--bitrate    ") "output bitrate\n"
+    " -S " LONG_OPT("--proxyhost  ") "proxy name or address\n"
+    " -R " LONG_OPT("--proxyport  ") "proxy port, optional (default 2101)\n"
+    " -M " LONG_OPT("--mode       ") "mode for data request\n"
     "     Valid modes are:\n"
     "     1, h, http     NTRIP Version 2.0 Caster in TCP/IP mode\n"
     "     2, r, rtsp     NTRIP Version 2.0 Caster in RTSP/RTP mode\n"
     "     3, n, ntrip1   NTRIP Version 1.0 Caster\n"
     "     4, a, auto     automatic detection (default)\n"
-    "or using an URL:\n%s ntrip:data[/user[:password]][@[server][:port][@proxyhost[:proxyport]]][;nmea]\n"
+    "or using an URL:\n%s ntrip:mountpoint[/user[:password]][@[server][:port][@proxyhost[:proxyport]]][;nmea]\n"
     , revisionstr, datestr, argv[0], argv[0]);
     exit(1);
   }

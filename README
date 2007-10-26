@@ -71,16 +71,16 @@ those intending to write their own client program.
 Call the program with following arguments:
 
 ntripclient -s server -u user ...
- -d --data      the requested data set or criteria for sourcetable filtering
- -s --server    the server name or address
- -p --password  the login password
- -r --port      the server port number (default 2101)
- -u --user      the user name
- -n --nmea      NMEA string for sending to server
- -b --bitrate   output bitrate
- -S --proxyhost proxy name or address
- -R --proxyport proxy port, optional (default 2101)
- -M --mode      mode for data request
+ -m --mountpoint the requested data set or criteria for sourcetable filtering
+ -s --server     the server name or address
+ -p --password   the login password
+ -r --port       the server port number (default 2101)
+ -u --user       the user name
+ -n --nmea       NMEA string for sending to server
+ -b --bitrate    output bitrate
+ -S --proxyhost  proxy name or address
+ -R --proxyport  proxy port, optional (default 2101)
+ -M --mode       mode for data request
      Valid modes are:
      1, h, http     NTRIP Version 2.0 Caster in TCP/IP mode
      2, r, rtsp     NTRIP Version 2.0 Caster in RTSP/RTP mode
@@ -88,7 +88,7 @@ ntripclient -s server -u user ...
      4, a, auto     automatic detection (default)
 
 or using an URL:
-ntripclient ntrip:data[/user[:password]][@[server][:port][@proxyhost[:proxyport]]][;nmea]
+ntripclient ntrip:mountpoint[/user[:password]][@[server][:port][@proxyhost[:proxyport]]][;nmea]
 
 The argument '-h' will cause a HELP on the screen.
 Without any argument ntripclient will provide the a table of
@@ -96,10 +96,10 @@ available resources (sourcetable).
 
 Sourcetable filtering
 ----------------------
-A missing argument '-d' leads to the output of the complete broadcaster
+A missing argument '-m' leads to the output of the complete broadcaster
 sourcetable. This may comprise hundreds of lines in case of large 
 networks. To limit the output, the sourcetable contents can be filtered 
-through entering the argument '-d' followed by a sequence of query strings,
+through entering the argument '-m' followed by a sequence of query strings,
 one for each sourcetable data field. Only those sourcetable lines are
 returned from the broadcaster whoes data fields match the corresponding
 query strings. A sequence of query strings has to be initiated by a '?'
@@ -134,12 +134,12 @@ and floating-point numbers in the sourcetable lines:
 Examples:
 
 - Searching in a sourcetable for streams in Germany would require
-  entering the '-d' argument followed by
+  entering the '-m' argument followed by
   the query string:
   ?STR;;;;;;DEU
 
 - Searching in a sourcetable for free streams fom the EUREF network and
-  coming from the Frankfurt area would require entering the '-d' argument
+  coming from the Frankfurt area would require entering the '-m' argument
   followed by the query string:
   ?STR;;;;;;;EUREF;;=>50&<=51;=>8.1&<8.6;;;;;N
 
