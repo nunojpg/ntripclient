@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.34 2007/10/08 08:03:19 stoecker Exp $
+  $Id: ntripclient.c,v 1.35 2007/10/26 14:56:47 stuerze Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -21,17 +21,30 @@
 
 #include <ctype.h>
 #include <getopt.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <errno.h>
 #include <string.h>
-#include <netdb.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 #include <time.h>
+
+#ifdef WINDOWSVERSION
+  #include <winsock.h>
+  typedef SOCKET sockettype;
+  typedef u_long in_addr_t;
+  typedef size_t socklen_t;
+#else
+  typedef int sockettype;
+  #include <signal.h>
+  #include <fcntl.h>
+  #include <unistd.h>
+  #include <arpa/inet.h>
+  #include <sys/socket.h>
+  #include <netinet/in.h>
+  #include <netdb.h>
+
+  #define closesocket(sock)       close(sock)
+  #define ALARMTIME   (2*60)
+#endif
 
 #ifndef COMPILEDATE
 #define COMPILEDATE " built " __DATE__
@@ -41,11 +54,10 @@
 #define AGENTSTRING "NTRIP NtripClientPOSIX"
 
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
-#define ALARMTIME   (2*60)
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.34 $";
-static char datestr[]     = "$Date: 2007/10/08 08:03:19 $";
+static char revisionstr[] = "$Revision: 1.35 $";
+static char datestr[]     = "$Date: 2007/10/26 14:56:47 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -62,8 +74,6 @@ struct Args
   int         bitrate;
   int         mode;
 };
-
-
 
 /* option parsing */
 #ifdef NO_LONG_OPTS
@@ -87,6 +97,8 @@ static struct option opts[] = {
 #endif
 #define ARGOPT "-d:m:bhp:r:s:u:n:S:R:M:"
 
+int stop = 0;
+#ifndef WINDOWSVERSION
 #ifdef __GNUC__
 static __attribute__ ((noreturn)) void sighandler_alarm(
 int sig __attribute__((__unused__)))
@@ -98,7 +110,6 @@ static void sighandler_alarm(int sig)
   exit(1);
 }
 
-int stop = 0;
 #ifdef __GNUC__
 static void sighandler_int(int sig __attribute__((__unused__)))
 #else /* __GNUC__ */
@@ -108,6 +119,7 @@ static void sighandler_alarm(int sig)
   alarm(2);
   stop = 1;
 }
+#endif /* WINDOWSVERSION */
 
 static const char *encodeurl(const char *req)
 {
@@ -126,7 +138,7 @@ static const char *encodeurl(const char *req)
       *urlenc++ = '%';
       *urlenc++ = h[*req >> 4];
       *urlenc++ = h[*req & 0x0f];
-      *req++;
+      req++;
     }
   }
   *urlenc = 0;
@@ -164,7 +176,7 @@ static const char *geturl(const char *url, struct Args *args)
             *Buffer++ = '%';
             *Buffer++ = h[*url >> 4];
             *Buffer++ = h[*url & 0x0f];
-            *url++;
+            url++;
           }      
        }
     }
@@ -432,16 +444,26 @@ int main(int argc, char **argv)
   setbuf(stdout, 0);
   setbuf(stdin, 0);
   setbuf(stderr, 0);
+#ifndef WINDOWSVERSION
   signal(SIGALRM,sighandler_alarm);
   signal(SIGINT,sighandler_int);
   alarm(ALARMTIME);
+#else
+  WSADATA wsaData;
+  if(WSAStartup(MAKEWORD(1,1),&wsaData))
+  {
+    fprintf(stderr, "Could not init network access.\n");
+    return 20;
+  }
+#endif
 
   if(getargs(argc, argv, &args))
   {
     int sleeptime = 0;
     do
     {
-      int sockfd, numbytes;  
+      sockettype sockfd;
+      int numbytes;  
       char buf[MAXDATASIZE];
       struct sockaddr_in their_addr; /* connector's address information */
       struct hostent *he;
@@ -452,14 +474,20 @@ int main(int argc, char **argv)
       long i;
       if(sleeptime)
       {
+#ifdef WINDOWSVERSION
+        Sleep(sleeptime*1000);
+#else
         sleep(sleeptime);
+#endif
         sleeptime += 2;
       }
       else
       {
         sleeptime = 1;
       }
+#ifndef WINDOWSVERSION
       alarm(ALARMTIME);
+#endif
       if(args.proxyhost)
       {
         int p;
@@ -680,7 +708,9 @@ int main(int argc, char **argv)
                 while(!stop && (i = recvfrom(sockudp, buf, 1526, 0,
                 (struct sockaddr*) &addrRTP, &len)) > 0)
                 {
+#ifndef WINDOWSVERSION
                   alarm(ALARMTIME);
+#endif
                   if(i >= 12+1 && (unsigned char)buf[0] == (2 << 6) && buf[1] == 0x60)
                   {
                     u= ((unsigned char)buf[2]<<8)+(unsigned char)buf[3];
@@ -819,14 +849,16 @@ int main(int argc, char **argv)
           int totalbytes = 0;
           int chunksize = 0;
 
-          while(!stop && (numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) != -1)
+          while(!stop && (numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) > 0)
           {
+#ifndef WINDOWSVERSION
             alarm(ALARMTIME);
+#endif
             if(!k)
             {
               if(numbytes > 17 && (!strncmp(buf, "HTTP/1.1 200 OK\r\n", 17)
               || !strncmp(buf, "HTTP/1.0 200 OK\r\n", 17)))
-	      {
+              {
                 const char *datacheck = "Content-Type: gnss/data\r\n";
                 const char *chunkycheck = "Transfer-Encoding: chunked\r\n";
                 int l = strlen(datacheck)-1;
@@ -944,11 +976,13 @@ int main(int argc, char **argv)
           sleeptime = 0;
           while(!stop && (numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) > 0)
           {
+#ifndef WINDOWSVERSION
             alarm(ALARMTIME);
+#endif
             fwrite(buf, (size_t)numbytes, 1, stdout);
           }
         }
-        close(sockfd);
+        closesocket(sockfd);
       }
     } while(args.data && *args.data != '%' && !stop);
   }
