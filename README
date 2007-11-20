@@ -148,6 +148,11 @@ Compilation/Installation
 Please extract the archive and copy its contents into an appropriate
 directory. Compile the source code under POSIX systems by calling 'make'.
 
+To compile the source code on a Windows system where a mingw gcc
+compiler is available, you may like to run the following command:
+
+gcc -DWINDOWSVERSION -o ntripclient.exe ntripclient.c -lwsock32
+
 Registration
 ------------
 Some of the data streams (mountpoints) from an NtripCaster may be
