@@ -1,13 +1,18 @@
-# $Id: makefile,v 1.3 2007/08/30 07:38:24 stoecker Exp $
+# $Id: makefile,v 1.4 2007/10/05 15:32:13 stuerze Exp $
 # probably works not with all compilers. Thought this should be easy
 # fixable. There is nothing special at this source.
 
-ntripclient: ntripclient.c
-	$(CC) -Wall -W -O3 $? -o $@
+ifdef windir
+OPTS = -Wall -W -O3 -DWINDOWSVERSION -lwsock32
+else
+OPTS = -Wall -W -O3 
+endif
 
+ntripclient: ntripclient.c
+	$(CC) $(OPTS) $? -o $@
 
 clean:
-	$(RM) -f ntripclient core*
+	$(RM) ntripclient core*
 
 
 archive:

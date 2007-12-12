@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.35 2007/10/26 14:56:47 stuerze Exp $
+  $Id: ntripclient.c,v 1.36 2007/11/20 12:54:05 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -56,8 +56,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.35 $";
-static char datestr[]     = "$Date: 2007/10/26 14:56:47 $";
+static char revisionstr[] = "$Revision: 1.36 $";
+static char datestr[]     = "$Date: 2007/11/20 12:54:05 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -73,6 +73,9 @@ struct Args
   const char *data;
   int         bitrate;
   int         mode;
+
+  int         udpport;
+  int         initudp;
 };
 
 /* option parsing */
@@ -82,8 +85,10 @@ struct Args
 #define LONG_OPT(a) a
 static struct option opts[] = {
 { "bitrate",    no_argument,       0, 'b'},
-{ "data",       required_argument, 0, 'd'},
+{ "data",       required_argument, 0, 'd'}, /* compatibility */
 { "mountpoint", required_argument, 0, 'm'},
+{ "initudp",    no_argument,       0, 'I'},
+{ "udpport",    required_argument, 0, 'P'},
 { "server",     required_argument, 0, 's'},
 { "password",   required_argument, 0, 'p'},
 { "port",       required_argument, 0, 'r'},
@@ -95,7 +100,7 @@ static struct option opts[] = {
 { "help",       no_argument,       0, 'h'},
 {0,0,0,0}};
 #endif
-#define ARGOPT "-d:m:bhp:r:s:u:n:S:R:M:"
+#define ARGOPT "-d:m:bhp:r:s:u:n:S:R:M:IP:"
 
 int stop = 0;
 #ifndef WINDOWSVERSION
@@ -292,6 +297,8 @@ static int getargs(int argc, char **argv, struct Args *args)
   args->proxyhost = 0;
   args->proxyport = "2101";
   args->mode = AUTO;
+  args->initudp = 0;
+  args->udpport = 0;
   help = 0;
 
   do
@@ -307,11 +314,13 @@ static int getargs(int argc, char **argv, struct Args *args)
     case 'p': args->password = optarg; break;
     case 'd':
     case 'm':
-       if(optarg && *optarg == '?') 
-         args->data = encodeurl(optarg);
-       else 
-         args->data = optarg; 
-     break;
+      if(optarg && *optarg == '?') 
+        args->data = encodeurl(optarg);
+      else 
+        args->data = optarg; 
+      break;
+    case 'I': args->initudp = 1; break;
+    case 'P': args->udpport = strtol(optarg, 0, 10); break;
     case 'n': args->nmea = optarg; break;
     case 'b': args->bitrate = 1; break;
     case 'h': help=1; break;
@@ -551,8 +560,8 @@ int main(int argc, char **argv)
         }
         /* fill structure with local address information for UDP */
         memset(&local, 0, sizeof(local));
-        local.sin_family = AF_INET;  	
-        local.sin_port = htons(0);
+        local.sin_family = AF_INET;
+        local.sin_port = htons(args.udpport);
         local.sin_addr.s_addr = htonl(INADDR_ANY); 
         len = sizeof(local);
         /* bind() in order to get a random RTP client_port */ 
@@ -669,6 +678,36 @@ int main(int argc, char **argv)
                 fprintf(stderr, "Could not extract session number\n");
                 exit(1);
               }
+            }
+            if(args.initudp)
+            {
+              printf("Sending initial UDP packet\n");
+              struct sockaddr_in casterRTP;
+              char rtpbuffer[12];
+              int i;
+              rtpbuffer[0] = (2<<6);
+              /* padding, extension, csrc are empty */
+              rtpbuffer[1] = 96;
+              /* marker is empty */
+              rtpbuffer[2] = 0;
+              rtpbuffer[3] = 0;
+              rtpbuffer[4] = 0;
+              rtpbuffer[5] = 0;
+              rtpbuffer[6] = 0;
+              rtpbuffer[7] = 0;
+              rtpbuffer[8] = 0;
+              rtpbuffer[9] = 0;
+              rtpbuffer[10] = 0;
+              rtpbuffer[11] = 0;
+              /* fill structure with caster address information for UDP */
+              memset(&casterRTP, 0, sizeof(casterRTP));
+              casterRTP.sin_family = AF_INET;
+              casterRTP.sin_port   = htons(((uint16_t)serverport));
+              casterRTP.sin_addr   = *((struct in_addr *)he->h_addr);
+
+              if((i = sendto(sockudp, rtpbuffer, 12, 0,
+              (struct sockaddr *) &casterRTP, sizeof(casterRTP))) != 12)
+                perror("WARNING: could not send initial UDP packet");
             }
 
             i = snprintf(buf, MAXDATASIZE,
