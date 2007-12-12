@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.36 2007/11/20 12:54:05 stoecker Exp $
+  $Id: ntripclient.c,v 1.37 2007/12/12 09:45:23 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -56,8 +56,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.36 $";
-static char datestr[]     = "$Date: 2007/11/20 12:54:05 $";
+static char revisionstr[] = "$Revision: 1.37 $";
+static char datestr[]     = "$Date: 2007/12/12 09:45:23 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -702,7 +702,7 @@ int main(int argc, char **argv)
               /* fill structure with caster address information for UDP */
               memset(&casterRTP, 0, sizeof(casterRTP));
               casterRTP.sin_family = AF_INET;
-              casterRTP.sin_port   = htons(((uint16_t)serverport));
+              casterRTP.sin_port   = htons(serverport);
               casterRTP.sin_addr   = *((struct in_addr *)he->h_addr);
 
               if((i = sendto(sockudp, rtpbuffer, 12, 0,
