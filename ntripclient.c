@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.37 2007/12/12 09:45:23 stoecker Exp $
+  $Id: ntripclient.c,v 1.38 2007/12/12 09:47:31 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -56,8 +56,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.37 $";
-static char datestr[]     = "$Date: 2007/12/12 09:45:23 $";
+static char revisionstr[] = "$Revision: 1.38 $";
+static char datestr[]     = "$Date: 2007/12/12 09:47:31 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -829,6 +829,7 @@ int main(int argc, char **argv)
           "GET %s%s%s%s/ HTTP/1.0\r\n"
           "Host: %s\r\n%s"
           "User-Agent: %s/%s\r\n"
+          "Connection: close\r\n"
           "\r\n"
           , proxyserver ? "http://" : "", proxyserver ? proxyserver : "",
           proxyserver ? ":" : "", proxyserver ? proxyport : "",
@@ -841,6 +842,7 @@ int main(int argc, char **argv)
           "GET %s%s%s%s/%s HTTP/1.0\r\n"
           "Host: %s\r\n%s"
           "User-Agent: %s/%s\r\n"
+          "Connection: close\r\n"
           "Authorization: Basic "
           , proxyserver ? "http://" : "", proxyserver ? proxyserver : "",
           proxyserver ? ":" : "", proxyserver ? proxyport : "",
