@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.38 2007/12/12 09:47:31 stoecker Exp $
+  $Id: ntripclient.c,v 1.39 2007/12/14 07:22:29 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -56,8 +56,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.38 $";
-static char datestr[]     = "$Date: 2007/12/12 09:47:31 $";
+static char revisionstr[] = "$Revision: 1.39 $";
+static char datestr[]     = "$Date: 2007/12/14 07:22:29 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -963,6 +963,7 @@ int main(int argc, char **argv)
                     else if(i >= 'a' && i <= 'f') chunksize = chunksize*16+i-'a'+10;
                     else if(i >= 'A' && i <= 'F') chunksize = chunksize*16+i-'A'+10;
                     else if(i == '\r') ++chunkymode;
+                    else if(i == ';') chunkymode = 5;
                     else stop = 1;
                     break;
                   case 3: /* scanning for return */
@@ -978,6 +979,9 @@ int main(int argc, char **argv)
                     pos += i;
                     if(!chunksize)
                       chunkymode = 1;
+                    break;
+                  case 5:
+                    if(i == '\r') chunkymode = 3;
                     break;
                   }
                 }
