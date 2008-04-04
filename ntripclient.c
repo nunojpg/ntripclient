@@ -1,6 +1,6 @@
 /*
   Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.39 2007/12/14 07:22:29 stoecker Exp $
+  $Id: ntripclient.c,v 1.40 2008/04/04 10:04:39 stoecker Exp $
   Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
     
   This program is free software; you can redistribute it and/or modify
@@ -56,8 +56,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.39 $";
-static char datestr[]     = "$Date: 2007/12/14 07:22:29 $";
+static char revisionstr[] = "$Revision: 1.40 $";
+static char datestr[]     = "$Date: 2008/04/04 10:04:39 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -897,8 +897,10 @@ int main(int argc, char **argv)
 #endif
             if(!k)
             {
-              if(numbytes > 17 && (!strncmp(buf, "HTTP/1.1 200 OK\r\n", 17)
-              || !strncmp(buf, "HTTP/1.0 200 OK\r\n", 17)))
+              if( numbytes > 17 && 
+                 !strstr(buf, "ICY 200 OK")  &&  // case 'proxy & ntrip 1.0 caster'
+                 (!strncmp(buf, "HTTP/1.1 200 OK\r\n", 17) || 
+                  !strncmp(buf, "HTTP/1.0 200 OK\r\n", 17)) )
               {
                 const char *datacheck = "Content-Type: gnss/data\r\n";
                 const char *chunkycheck = "Transfer-Encoding: chunked\r\n";
@@ -924,7 +926,7 @@ int main(int argc, char **argv)
                 if(i < numbytes-l)
                   chunkymode = 1;
 	      }
-              else if(numbytes < 12 || strncmp("ICY 200 OK\r\n", buf, 12))
+              else if(!strstr(buf, "ICY 200 OK"))
               {
                 fprintf(stderr, "Could not get the requested data: ");
                 for(k = 0; k < numbytes && buf[k] != '\n' && buf[k] != '\r'; ++k)
