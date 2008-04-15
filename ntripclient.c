@@ -1,8 +1,8 @@
 /*
-  Easy example NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.41 2008/04/04 13:02:06 stuerze Exp $
-  Copyright (C) 2003-2005 by Dirk Stoecker <soft@dstoecker.de>
-    
+  NTRIP client for POSIX.
+  $Id: ntripclient.c,v 1.42 2008/04/07 11:49:13 stoecker Exp $
+  Copyright (C) 2003-2008 by Dirk Stöcker <soft@dstoecker.de>
+
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation; either version 2 of the License, or
@@ -26,6 +26,8 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+
+#include "serial.c"
 
 #ifdef WINDOWSVERSION
   #include <winsock.h>
@@ -56,8 +58,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.41 $";
-static char datestr[]     = "$Date: 2008/04/04 13:02:06 $";
+static char revisionstr[] = "$Revision: 1.42 $";
+static char datestr[]     = "$Date: 2008/04/07 11:49:13 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -76,6 +78,12 @@ struct Args
 
   int         udpport;
   int         initudp;
+  enum SerialBaud baud;
+  enum SerialDatabits databits;
+  enum SerialStopbits stopbits;
+  enum SerialParity parity;
+  enum SerialProtocol protocol;
+  const char *serdevice;
 };
 
 /* option parsing */
@@ -97,10 +105,16 @@ static struct option opts[] = {
 { "user",       required_argument, 0, 'u'},
 { "nmea",       required_argument, 0, 'n'},
 { "mode",       required_argument, 0, 'M'},
+{ "serdevice",  required_argument, 0, 'D'},
+{ "baud",       required_argument, 0, 'B'},
+{ "stopbits",   required_argument, 0, 'T'},
+{ "protocol",   required_argument, 0, 'C'},
+{ "parity",     required_argument, 0, 'Y'},
+{ "databits",   required_argument, 0, 'A'},
 { "help",       no_argument,       0, 'h'},
 {0,0,0,0}};
 #endif
-#define ARGOPT "-d:m:bhp:r:s:u:n:S:R:M:IP:"
+#define ARGOPT "-d:m:bhp:r:s:u:n:S:R:M:IP:D:B:T:C:Y:A:"
 
 int stop = 0;
 #ifndef WINDOWSVERSION
@@ -182,7 +196,7 @@ static const char *geturl(const char *url, struct Args *args)
             *Buffer++ = h[*url >> 4];
             *Buffer++ = h[*url & 0x0f];
             url++;
-          }      
+          }
        }
     }
     if(Buffer == args->data)
@@ -299,6 +313,12 @@ static int getargs(int argc, char **argv, struct Args *args)
   args->mode = AUTO;
   args->initudp = 0;
   args->udpport = 0;
+  args->protocol = SPAPROTOCOL_NONE;
+  args->parity = SPAPARITY_NONE;
+  args->stopbits = SPASTOPBITS_1;
+  args->databits = SPADATABITS_8;
+  args->baud = SPABAUD_9600;
+  args->serdevice = 0;
   help = 0;
 
   do
@@ -319,6 +339,74 @@ static int getargs(int argc, char **argv, struct Args *args)
       else 
         args->data = optarg; 
       break;
+    case 'B':
+      {
+        int i = strtol(optarg, 0, 10);
+
+        switch(i)
+        {
+        case 50: args->baud = SPABAUD_50; break;
+        case 110: args->baud = SPABAUD_110; break;
+        case 300: args->baud = SPABAUD_300; break;
+        case 600: args->baud = SPABAUD_600; break;
+        case 1200: args->baud = SPABAUD_1200; break;
+        case 2400: args->baud = SPABAUD_2400; break;
+        case 4800: args->baud = SPABAUD_4800; break;
+        case 9600: args->baud = SPABAUD_9600; break;
+        case 19200: args->baud = SPABAUD_19200; break;
+        case 38400: args->baud = SPABAUD_38400; break;
+        case 57600: args->baud = SPABAUD_57600; break;
+        case 115200: args->baud = SPABAUD_115200; break;
+        default:
+          fprintf(stderr, "Baudrate '%s' unknown\n", optarg);
+          res = 0;
+          break;
+        }
+      }
+      break;
+    case 'T':
+      if(!strcmp(optarg, "1")) args->stopbits = SPASTOPBITS_1;
+      else if(!strcmp(optarg, "2")) args->stopbits = SPASTOPBITS_2;
+      else
+      {
+        fprintf(stderr, "Stopbits '%s' unknown\n", optarg);
+        res = 0;
+      }
+      break;
+    case 'A':
+      if(!strcmp(optarg, "5")) args->databits = SPADATABITS_5;
+      else if(!strcmp(optarg, "6")) args->databits = SPADATABITS_6;
+      else if(!strcmp(optarg, "7")) args->databits = SPADATABITS_7;
+      else if(!strcmp(optarg, "8")) args->databits = SPADATABITS_8;
+      else
+      {
+        fprintf(stderr, "Databits '%s' unknown\n", optarg);
+        res = 0;
+      }
+      break;
+    case 'C':
+      {
+        int i = 0;
+        args->protocol = SerialGetProtocol(optarg, &i);
+        if(i)
+        {
+          fprintf(stderr, "Protocol '%s' unknown\n", optarg);
+          res = 0;
+        }
+      }
+      break;
+    case 'Y':
+      {
+        int i = 0;
+        args->parity = SerialGetParity(optarg, &i);
+        if(i)
+        {
+          fprintf(stderr, "Parity '%s' unknown\n", optarg);
+          res = 0;
+        }
+      }
+      break;
+    case 'D': args->serdevice = optarg; break;
     case 'I': args->initudp = 1; break;
     case 'P': args->udpport = strtol(optarg, 0, 10); break;
     case 'n': args->nmea = optarg; break;
@@ -382,8 +470,16 @@ static int getargs(int argc, char **argv, struct Args *args)
     " -u " LONG_OPT("--user       ") "the user name\n"
     " -n " LONG_OPT("--nmea       ") "NMEA string for sending to server\n"
     " -b " LONG_OPT("--bitrate    ") "output bitrate\n"
+    " -I " LONG_OPT("--initudp    ") "send initial UDP packet for firewall handling\n"
+    " -P " LONG_OPT("--udpport    ") "set the local UDP port\n"
     " -S " LONG_OPT("--proxyhost  ") "proxy name or address\n"
     " -R " LONG_OPT("--proxyport  ") "proxy port, optional (default 2101)\n"
+    " -D " LONG_OPT("--serdevice  ") "serial device for output\n"
+    " -B " LONG_OPT("--baud       ") "baudrate for serial device\n"
+    " -T " LONG_OPT("--stopbits   ") "stopbits for serial device\n"
+    " -C " LONG_OPT("--protocol   ") "protocol for serial device\n"
+    " -Y " LONG_OPT("--parity     ") "parity for serial device\n"
+    " -A " LONG_OPT("--databits   ") "databits for serial device\n"
     " -M " LONG_OPT("--mode       ") "mode for data request\n"
     "     Valid modes are:\n"
     "     1, h, http     NTRIP Version 2.0 Caster in TCP/IP mode\n"
@@ -468,7 +564,21 @@ int main(int argc, char **argv)
 
   if(getargs(argc, argv, &args))
   {
+    struct serial sx;
+    char nmeabuffer[200] = "$GPGGA,"; /* our start string */
+    size_t nmeabufpos = 0;
+    size_t nmeastarpos = 0;
     int sleeptime = 0;
+    if(args.serdevice)
+    {
+      const char *e = SerialInit(&sx, args.serdevice, args.baud,
+      args.stopbits, args.protocol, args.parity, args.databits, 1);
+      if(e)
+      {
+        fprintf(stderr, "%s\n", e);
+        return 20;
+      }
+    }
     do
     {
       sockettype sockfd;
@@ -545,7 +655,7 @@ int main(int argc, char **argv)
       }
       their_addr.sin_family = AF_INET;
       their_addr.sin_addr = *((struct in_addr *)he->h_addr);
-      
+
       if(args.data && *args.data != '%' && args.mode == RTSP)
       {
         struct sockaddr_in local;
@@ -629,7 +739,7 @@ int main(int argc, char **argv)
         if((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) != -1)
         {
           if(numbytes >= 17 && !strncmp(buf, "RTSP/1.0 200 OK\r\n", 17))
-	  {
+          {
             int serverport = 0, session = 0;
             const char *portcheck = "server_port=";
             const char *sessioncheck = "session: ";
@@ -695,10 +805,11 @@ int main(int argc, char **argv)
               rtpbuffer[5] = 0;
               rtpbuffer[6] = 0;
               rtpbuffer[7] = 0;
-              rtpbuffer[8] = 0;
-              rtpbuffer[9] = 0;
-              rtpbuffer[10] = 0;
-              rtpbuffer[11] = 0;
+              /* sequence and timestamp are empty */
+              rtpbuffer[8] = (session>>24)&0xFF;
+              rtpbuffer[9] = (session>>16)&0xFF;
+              rtpbuffer[10] = (session>>8)&0xFF;
+              rtpbuffer[11] = (session)&0xFF;
               /* fill structure with caster address information for UDP */
               memset(&casterRTP, 0, sizeof(casterRTP));
               casterRTP.sin_family = AF_INET;
@@ -925,7 +1036,7 @@ int main(int argc, char **argv)
                 }
                 if(i < numbytes-l)
                   chunkymode = 1;
-	      }
+              }
               else if(!strstr(buf, "ICY 200 OK"))
               {
                 fprintf(stderr, "Could not get the requested data: ");
@@ -975,7 +1086,23 @@ int main(int argc, char **argv)
                   case 4: /* output data */
                     i = numbytes-pos;
                     if(i > chunksize) i = chunksize;
-                    fwrite(buf+pos, (size_t)i, 1, stdout);
+                    if(args.serdevice)
+                    {
+                      int ofs = 0;
+                      while(i > ofs && !stop)
+                      {
+                        int j = SerialWrite(&sx, buf+pos+ofs, i-ofs);
+                        if(j < 0)
+                        {
+                          fprintf(stderr, "Could not access serial device\n");
+                          stop = 1;
+                        }
+                        else
+                          ofs += j;
+                      }
+                    }
+                    else
+                      fwrite(buf+pos, (size_t)i, 1, stdout);
                     totalbytes += i;
                     chunksize -= i;
                     pos += i;
@@ -996,7 +1123,23 @@ int main(int argc, char **argv)
               else
               {
                 totalbytes += numbytes;
-                fwrite(buf, (size_t)numbytes, 1, stdout);
+                if(args.serdevice)
+                {
+                  int ofs = 0;
+                  while(numbytes > ofs && !stop)
+                  {
+                    int i = SerialWrite(&sx, buf+ofs, numbytes-ofs);
+                    if(i < 0)
+                    {
+                      fprintf(stderr, "Could not access serial device\n");
+                      stop = 1;
+                    }
+                    else
+                      ofs += i;
+                  }
+                }
+                else
+                  fwrite(buf, (size_t)numbytes, 1, stdout);
               }
               fflush(stdout);
               if(totalbytes < 0) /* overflow */
@@ -1004,6 +1147,63 @@ int main(int argc, char **argv)
                 totalbytes = 0;
                 starttime = time(0);
                 lastout = starttime;
+              }
+              if(args.serdevice && !stop)
+              {
+                int doloop = 1;
+                while(doloop && !stop)
+                {
+                  int i = SerialRead(&sx, buf, 200);
+                  if(i < 0)
+                  {
+                    fprintf(stderr, "Could not access serial device\n");
+                    stop = 1;
+                  }
+                  else
+                  {
+                    int j = 0;
+                    if(i < 200) doloop = 0;
+                    fwrite(buf, i, 1, stdout);
+                    while(j < i)
+                    {
+                      if(nmeabufpos < 6)
+                      {
+                        if(nmeabuffer[nmeabufpos] != buf[j])
+                        {
+                          if(nmeabufpos) nmeabufpos = 0;
+                          else ++j;
+                        }
+                        else
+                        {
+                          nmeastarpos = 0;
+                          ++j; ++nmeabufpos;
+                        }
+                      }
+                      else if((nmeastarpos && nmeabufpos == nmeastarpos + 3)
+                      || buf[j] == '\r' || buf[j] == '\n')
+                      {
+                        doloop = 0;
+                        nmeabuffer[nmeabufpos++] = '\r';
+                        nmeabuffer[nmeabufpos++] = '\n';
+                        if(send(sockfd, nmeabuffer, nmeabufpos, 0)
+                        != (int)nmeabufpos)
+                        {
+                          fprintf(stderr, "Could not send NMEA\n");
+                          stop = 1;
+                        }
+                        nmeabufpos = 0;
+                      }
+                      else if(nmeabufpos > sizeof(nmeabuffer)-10 ||
+                      buf[j] == '$')
+                        nmeabufpos = 0;
+                      else
+                      {
+                        if(buf[j] == '*') nmeastarpos = nmeabufpos;
+                        nmeabuffer[nmeabufpos++] = buf[j++];
+                      }
+                    }
+                  }
+                }
               }
               if(args.bitrate)
               {
@@ -1032,6 +1232,10 @@ int main(int argc, char **argv)
         closesocket(sockfd);
       }
     } while(args.data && *args.data != '%' && !stop);
+    if(args.serdevice)
+    {
+      SerialFree(&sx);
+    }
   }
   return 0;
 }

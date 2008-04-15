@@ -1,4 +1,4 @@
-# $Id: makefile,v 1.5 2007/12/12 09:45:23 stoecker Exp $
+# $Id: makefile,v 1.6 2007/12/14 14:52:16 stuerze Exp $
 # probably works not with all compilers. Thought this should be easy
 # fixable. There is nothing special at this source.
 
@@ -10,8 +10,8 @@ else
 OPTS = -Wall -W -O3 
 endif
 
-ntripclient: ntripclient.c
-	$(CC) $(OPTS) $? -o $@ $(LIBS)
+ntripclient: ntripclient.c serial.c
+	$(CC) $(OPTS) ntripclient.c -o $@ $(LIBS)
 
 clean:
 	$(RM) ntripclient core*
