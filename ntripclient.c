@@ -1,6 +1,6 @@
 /*
   NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.43 2008/04/15 13:27:49 stoecker Exp $
+  $Id: ntripclient.c,v 1.44 2008/04/22 14:26:44 stoecker Exp $
   Copyright (C) 2003-2008 by Dirk Stöcker <soft@dstoecker.de>
 
   This program is free software; you can redistribute it and/or modify
@@ -58,8 +58,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.43 $";
-static char datestr[]     = "$Date: 2008/04/15 13:27:49 $";
+static char revisionstr[] = "$Revision: 1.44 $";
+static char datestr[]     = "$Date: 2008/04/22 14:26:44 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -120,6 +120,7 @@ static struct option opts[] = {
 
 int stop = 0;
 #ifndef WINDOWSVERSION
+int sigstop = 0;
 #ifdef __GNUC__
 static __attribute__ ((noreturn)) void sighandler_alarm(
 int sig __attribute__((__unused__)))
@@ -127,7 +128,10 @@ int sig __attribute__((__unused__)))
 static void sighandler_alarm(int sig)
 #endif /* __GNUC__ */
 {
-  fprintf(stderr, "ERROR: more than %d seconds no activity\n", ALARMTIME);
+  if(!sigstop)
+    fprintf(stderr, "ERROR: more than %d seconds no activity\n", ALARMTIME);
+  else
+    fprintf(stderr, "ERROR: user break\n");
   exit(1);
 }
 
@@ -137,6 +141,7 @@ static void sighandler_int(int sig __attribute__((__unused__)))
 static void sighandler_alarm(int sig)
 #endif /* __GNUC__ */
 {
+  sigstop = 1;
   alarm(2);
   stop = 1;
 }
@@ -888,27 +893,58 @@ int main(int argc, char **argv)
                 {
                   if(numbytes >= 17 && !strncmp(buf, "RTSP/1.0 200 OK\r\n", 17))
                   {
+                    int ts = 0, sn = 0;
+                    time_t init = 0;
                     struct sockaddr_in addrRTP;
+#ifdef WINDOWSVERSION
+                    u_long blockmode = 1;
+                    if(ioctlsocket(sockudp, FIONBIO, &blockmode)
+                    || ioctlsocket(sockfd, FIONBIO, &blockmode))
+#else /* WINDOWSVERSION */
+                    if(fcntl(sockfd, F_SETFL, O_NONBLOCK) < 0
+                    || fcntl(sockudp, F_SETFL, O_NONBLOCK) < 0)
+#endif /* WINDOWSVERSION */
+                    {
+                      fprintf(stderr, "Could not set nonblocking mode\n");
+                      error = 1;
+                    }
+
                     /* fill structure with caster address information for UDP */
                     memset(&addrRTP, 0, sizeof(addrRTP));
                     addrRTP.sin_family = AF_INET;
                     addrRTP.sin_port   = htons(serverport);
                     their_addr.sin_addr = *((struct in_addr *)he->h_addr);
                     len = sizeof(addrRTP);
-                    int ts = 0;
-                    int sn = 0;
-                    int ssrc = 0;
-                    int init = 0;
-                    int u, v, w;
-                    while(!stop && !error && (i = recvfrom(sockudp, buf, 1526, 0,
-                    (struct sockaddr*) &addrRTP, &len)) > 0)
+
+                    while(!stop && !error)
                     {
+                      struct timeval tv = {1,0};
+                      fd_set fdr;
+                      fd_set fde;
+                      int r;
+
+                      FD_ZERO(&fdr);
+                      FD_ZERO(&fde);
+                      FD_SET(sockudp, &fdr);
+                      FD_SET(sockfd, &fdr);
+                      FD_SET(sockudp, &fde);
+                      FD_SET(sockfd, &fde);
+                      if(select((sockudp>sockfd?sockudp:sockfd)+1,
+                      &fdr,0,&fde,&tv) < 0)
+                      {
+                        fprintf(stderr, "Select problem.\n");
+                        error = 1;
+                        continue;
+                      }
+                      i = recvfrom(sockudp, buf, 1526, 0,
+                      (struct sockaddr*) &addrRTP, &len);
 #ifndef WINDOWSVERSION
                       alarm(ALARMTIME);
 #endif
                       if(i >= 12+1 && (unsigned char)buf[0] == (2 << 6) && buf[1] == 0x60)
                       {
-                        u= ((unsigned char)buf[2]<<8)+(unsigned char)buf[3];
+                        int u,v,w;
+                        u = ((unsigned char)buf[2]<<8)+(unsigned char)buf[3];
                         v = ((unsigned char)buf[4]<<24)+((unsigned char)buf[5]<<16)
                         +((unsigned char)buf[6]<<8)+(unsigned char)buf[7];
                         w = ((unsigned char)buf[8]<<24)+((unsigned char)buf[9]<<16)
@@ -916,21 +952,66 @@ int main(int argc, char **argv)
 
                         if(init)
                         {
+                          time_t ct;
                           if(u < -30000 && sn > 30000) sn -= 0xFFFF;
-                          if(ssrc != w || ts > v)
+                          if(session != w || ts > v)
                           {
                             fprintf(stderr, "Illegal UDP data received.\n");
                             continue;
                           }
                           else if(u > sn) /* don't show out-of-order packets */
                             fwrite(buf+12, (size_t)i-12, 1, stdout);
+                          ct = time(0);
+                          if(ct-init > 15)
+                          {
+                            i = snprintf(buf, MAXDATASIZE,
+                            "GET_PARAMETER rtsp://%s%s%s/%s RTSP/1.0\r\n"
+                            "CSeq: %d\r\n"
+                            "Session: %d\r\n"
+                            "\r\n",
+                            args.server, proxyserver ? ":" : "", proxyserver
+                            ? args.port : "", args.data, cseq++, session);
+                            if(i > MAXDATASIZE || i < 0)
+                            {
+                              fprintf(stderr, "Requested data too long\n");
+                              stop = 1;
+                            }
+                            else if(send(sockfd, buf, (size_t)i, 0) != i)
+                            {
+                              perror("send");
+                              error = 1;
+                            }
+                            init = ct;
+                          }
                         }
-                        sn = u; ts = v; ssrc = w; init = 1;
+                        else
+                        {
+                          init = time(0);
+                        }
+                        sn = u; ts = v;
                       }
-                      else
+                      else if(i >= 0)
                       {
                         fprintf(stderr, "Illegal UDP header.\n");
                         continue;
+                      }
+                      /* ignore RTSP server replies */
+                      if((r=recv(sockfd, buf, MAXDATASIZE-1, 0)) < 0)
+                      {
+#ifdef WINDOWSVERSION
+                        if(WSAGetLastError() != WSAEWOULDBLOCK)
+#else /* WINDOWSVERSION */
+                        if(errno != EAGAIN)
+#endif /* WINDOWSVERSION */
+                        {
+                          fprintf(stderr, "Control connection closed\n");
+                          error = 1;
+                        }
+                      }
+                      else if(!r)
+                      {
+                        fprintf(stderr, "Control connection read error\n");
+                        error = 1;
                       }
                     }
                   }
