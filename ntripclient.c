@@ -1,6 +1,6 @@
 /*
   NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.44 2008/04/22 14:26:44 stoecker Exp $
+  $Id: ntripclient.c,v 1.45 2008/05/15 16:51:04 stoecker Exp $
   Copyright (C) 2003-2008 by Dirk Stöcker <soft@dstoecker.de>
 
   This program is free software; you can redistribute it and/or modify
@@ -58,8 +58,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.44 $";
-static char datestr[]     = "$Date: 2008/04/22 14:26:44 $";
+static char revisionstr[] = "$Revision: 1.45 $";
+static char datestr[]     = "$Date: 2008/05/15 16:51:04 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
 
@@ -397,7 +397,7 @@ static int getargs(int argc, char **argv, struct Args *args)
       {
         int i = 0;
         args->protocol = SerialGetProtocol(optarg, &i);
-        if(i)
+        if(!i)
         {
           fprintf(stderr, "Protocol '%s' unknown\n", optarg);
           res = 0;
@@ -408,7 +408,7 @@ static int getargs(int argc, char **argv, struct Args *args)
       {
         int i = 0;
         args->parity = SerialGetParity(optarg, &i);
-        if(i)
+        if(!i)
         {
           fprintf(stderr, "Parity '%s' unknown\n", optarg);
           res = 0;
