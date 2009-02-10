@@ -1,6 +1,6 @@
 /*
   NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.45 2008/05/15 16:51:04 stoecker Exp $
+  $Id: ntripclient.c,v 1.46 2008/11/04 15:35:03 stoecker Exp $
   Copyright (C) 2003-2008 by Dirk Stöcker <soft@dstoecker.de>
 
   This program is free software; you can redistribute it and/or modify
@@ -34,6 +34,10 @@
   typedef SOCKET sockettype;
   typedef u_long in_addr_t;
   typedef size_t socklen_t;
+  void myperror(char *s)
+  {
+    fprintf(stderr, "%s: %d\n", s, WSAGetLastError());
+  }
 #else
   typedef int sockettype;
   #include <signal.h>
@@ -46,6 +50,7 @@
 
   #define closesocket(sock)       close(sock)
   #define ALARMTIME   (2*60)
+  #define myperror perror
 #endif
 
 #ifndef COMPILEDATE
@@ -54,14 +59,15 @@
 
 /* The string, which is send as agent in HTTP request */
 #define AGENTSTRING "NTRIP NtripClientPOSIX"
+#define TIME_RESOLUTION 125
 
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.45 $";
-static char datestr[]     = "$Date: 2008/05/15 16:51:04 $";
+static char revisionstr[] = "$Revision: 1.46 $";
+static char datestr[]     = "$Date: 2008/11/04 15:35:03 $";
 
-enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, END };
+enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, UDP = 5, END };
 
 struct Args
 {
@@ -433,6 +439,8 @@ static int getargs(int argc, char **argv, struct Args *args)
         args->mode = HTTP;
       else if(!strcmp(optarg,"r") || !strcmp(optarg,"rtsp"))
         args->mode = RTSP;
+      else if(!strcmp(optarg,"u") || !strcmp(optarg,"udp"))
+        args->mode = UDP;
       else if(!strcmp(optarg,"a") || !strcmp(optarg,"auto"))
         args->mode = AUTO;
       else args->mode = atoi(optarg);
@@ -484,6 +492,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     "     2, r, rtsp     NTRIP Version 2.0 Caster in RTSP/RTP mode\n"
     "     3, n, ntrip1   NTRIP Version 1.0 Caster\n"
     "     4, a, auto     automatic detection (default)\n"
+    "     5, u, udp      NTRIP Version 2.0 Caster in UDP mode\n"
     "or using an URL:\n%s ntrip:mountpoint[/user[:password]][@[server][:port][@proxyhost[:proxyport]]][;nmea]\n"
     "\nExpert options:\n"
     " -n " LONG_OPT("--nmea       ") "NMEA string for sending to server\n"
@@ -679,9 +688,10 @@ int main(int argc, char **argv)
             fprintf(stderr, "Server name lookup failed for '%s'.\n", server);
             error = 1;
           }
-          else if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+          else if((sockfd = socket(AF_INET, (args.mode == UDP ? SOCK_DGRAM :
+          SOCK_STREAM), 0)) == -1)
           {
-            perror("socket");
+            myperror("socket");
             error = 1;
           }
           else
@@ -693,7 +703,267 @@ int main(int argc, char **argv)
       }
       if(!stop && !error)
       {
-        if(args.data && *args.data != '%' && args.mode == RTSP)
+        if(args.mode == UDP)
+        {
+          int session, tim, seq, init;
+          char rtpbuf[1526];
+          int i=12, j;
+
+          init = time(0);
+          srand(init);
+          session = rand();
+          tim = rand();
+          seq = rand();
+
+          rtpbuf[0] = (2<<6);
+          /* padding, extension, csrc are empty */
+          rtpbuf[1] = 97;
+          /* marker is empty */
+          rtpbuf[2] = (seq>>8)&0xFF;
+          rtpbuf[3] = (seq)&0xFF;
+          rtpbuf[4] = (tim>>24)&0xFF;
+          rtpbuf[5] = (tim>>16)&0xFF;
+          rtpbuf[6] = (tim>>8)&0xFF;
+          rtpbuf[7] = (tim)&0xFF;
+          /* sequence and timestamp are empty */
+          rtpbuf[8] = (session>>24)&0xFF;
+          rtpbuf[9] = (session>>16)&0xFF;
+          rtpbuf[10] = (session>>8)&0xFF;
+          rtpbuf[11] = (session)&0xFF;
+          ++seq;
+
+          j = snprintf(rtpbuf+i, sizeof(rtpbuf)-i-40, /* leave some space for login */
+          "GET /%s HTTP/1.1\r\n"
+          "Host: %s\r\n"
+          "Ntrip-Version: Ntrip/2.0\r\n"
+          "User-Agent: %s/%s\r\n"
+          "%s%s%s"
+          "Connection: close%s",
+          args.data ? args.data : "", args.server, AGENTSTRING, revisionstr,
+          args.nmea ? "Ntrip-GGA: " : "", args.nmea ? args.nmea : "",
+          args.nmea ? "\r\n" : "",
+          (*args.user || *args.password) ? "\r\nAuthorization: Basic " : "");
+          i += j;
+          if(i > (int)sizeof(rtpbuf)-40 || j < 0) /* second check for old glibc */
+          {
+            fprintf(stderr, "Requested data too long\n");
+            stop = 1;
+          }
+          else
+          {
+            i += encode(rtpbuf+i, sizeof(rtpbuf)-i-4, args.user, args.password);
+            if(i > (int)sizeof(rtpbuf)-4)
+            {
+              fprintf(stderr, "Username and/or password too long\n");
+              stop = 1;
+            }
+            else
+            {
+              struct sockaddr_in local;
+              socklen_t len;
+
+              rtpbuf[i++] = '\r';
+              rtpbuf[i++] = '\n';
+              rtpbuf[i++] = '\r';
+              rtpbuf[i++] = '\n';
+
+
+              /* fill structure with local address information for UDP */
+              memset(&local, 0, sizeof(local));
+              local.sin_family = AF_INET;
+              local.sin_port = htons(args.udpport);
+              local.sin_addr.s_addr = htonl(INADDR_ANY);
+              len = sizeof(local);
+
+              /* bind() in order to get a random RTP client_port */
+              if((bind(sockfd, (struct sockaddr *)&local, len)) < 0)
+              {
+                myperror("bind");
+                error = 1;
+              }
+              else if(connect(sockfd, (struct sockaddr *)&their_addr,
+              sizeof(struct sockaddr)) == -1)
+              {
+                myperror("connect");
+                error = 1;
+              }
+              else if(send(sockfd, rtpbuf, i, 0) != i)
+              {
+                myperror("Could not send UDP packet");
+                stop = 1;
+              }
+              else
+              {
+                if((numbytes=recv(sockfd, rtpbuf, sizeof(rtpbuf)-1, 0)) > 0)
+                {
+                  int sn = 0x10000, ts=0;
+                  /* we don't expect message longer than 1513, so we cut the last
+                    byte for security reasons to prevent buffer overrun */
+                  rtpbuf[numbytes] = 0;
+                  if(numbytes > 17+12 &&
+                  (!strncmp(rtpbuf+12, "HTTP/1.1 200 OK\r\n", 17) ||
+                  !strncmp(rtpbuf+12, "HTTP/1.0 200 OK\r\n", 17)))
+                  {
+                    const char *sessioncheck = "session: ";
+                    const char *datacheck = "Content-Type: gnss/data\r\n";
+                    int l = strlen(datacheck)-1;
+                    int j=0;
+                    for(i = 12; j != l && i < numbytes-l; ++i)
+                    {
+                      for(j = 0; j < l && rtpbuf[i+j] == datacheck[j]; ++j)
+                        ;
+                    }
+                    if(i == numbytes-l)
+                    {
+                      fprintf(stderr, "No 'Content-Type: gnss/data' found\n");
+                      error = 1;
+                    }
+                    /* check for Session */
+                    l = strlen(sessioncheck)-1;
+                    j=0;
+                    for(i = 12; j != l && i < numbytes-l; ++i)
+                    {
+                      for(j = 0; j < l && tolower(rtpbuf[i+j]) == sessioncheck[j]; ++j)
+                        ;
+                    }
+                    if(i != numbytes-l) /* found a session number */
+                    {
+                      i+=l;
+                      session = 0;
+                      while(i < numbytes && rtpbuf[i] >= '0' && rtpbuf[i] <= '9')
+                        session = session * 10 + rtpbuf[i++]-'0';
+                      if(rtpbuf[i] != '\r')
+                      {
+                        fprintf(stderr, "Could not extract session number\n");
+                        stop = 1;
+                      }
+                    }
+                  }
+                  else
+                  {
+                    int k;
+                    fprintf(stderr, "Could not get the requested data: ");
+                    for(k = 12; k < numbytes && rtpbuf[k] != '\n' && rtpbuf[k] != '\r'; ++k)
+                    {
+                      fprintf(stderr, "%c", isprint(rtpbuf[k]) ? rtpbuf[k] : '.');
+                    }
+                    fprintf(stderr, "\n");
+                    error = 1;
+                  }
+                  while(!stop && !error)
+                  {
+                    struct timeval tv = {1,0};
+                    fd_set fdr;
+                    fd_set fde;
+
+                    FD_ZERO(&fdr);
+                    FD_ZERO(&fde);
+                    FD_SET(sockfd, &fdr);
+                    FD_SET(sockfd, &fde);
+                    if(select(sockfd+1,&fdr,0,&fde,&tv) < 0)
+                    {
+                      fprintf(stderr, "Select problem.\n");
+                      error = 1;
+                      continue;
+                    }
+                    i = recv(sockfd, rtpbuf, sizeof(rtpbuf), 0);
+#ifndef WINDOWSVERSION
+                    alarm(ALARMTIME);
+#endif
+                    if(i >= 12+1 && (unsigned char)rtpbuf[0] == (2 << 6)
+                    && rtpbuf[1] >= 96 && rtpbuf[1] <= 98)
+                    {
+                      time_t ct;
+                      int u,v,w;
+                      u = ((unsigned char)rtpbuf[2]<<8)+(unsigned char)rtpbuf[3];
+                      v = ((unsigned char)rtpbuf[4]<<24)+((unsigned char)rtpbuf[5]<<16)
+                      +((unsigned char)rtpbuf[6]<<8)+(unsigned char)rtpbuf[7];
+                      w = ((unsigned char)rtpbuf[8]<<24)+((unsigned char)rtpbuf[9]<<16)
+                      +((unsigned char)rtpbuf[10]<<8)+(unsigned char)rtpbuf[11];
+
+                      if(sn == 0x10000) {sn = u-1;ts=v-1;}
+                      else if(u < -30000 && sn > 30000) sn -= 0xFFFF;
+                      if(session != w || ts > v)
+                      {
+                        fprintf(stderr, "Illegal UDP data received.\n");
+                        continue;
+                      }
+                      else if(u > sn) /* don't show out-of-order packets */
+                      {
+                        if(rtpbuf[1] == 98)
+                        {
+                          fprintf(stderr, "Connection closed.\n");
+                          error = 1;
+                          continue;
+                        }
+                        else if(rtpbuf[1] == 96)
+                        {
+                          fwrite(rtpbuf+12, (size_t)i-12, 1, stdout);
+                        }
+                      }
+                      sn = u; ts = v;
+  
+                      /* Keep Alive */
+                      ct = time(0);
+                      if(ct-init > 15)
+                      {
+                        tim += (ct-init)*1000000/TIME_RESOLUTION;
+                        rtpbuf[0] = (2<<6);
+                        /* padding, extension, csrc are empty */
+                        rtpbuf[1] = 96;
+                        /* marker is empty */
+                        rtpbuf[2] = (seq>>8)&0xFF;
+                        rtpbuf[3] = (seq)&0xFF;
+                        rtpbuf[4] = (tim>>24)&0xFF;
+                        rtpbuf[5] = (tim>>16)&0xFF;
+                        rtpbuf[6] = (tim>>8)&0xFF;
+                        rtpbuf[7] = (tim)&0xFF;
+                        /* sequence and timestamp are empty */
+                        rtpbuf[8] = (session>>24)&0xFF;
+                        rtpbuf[9] = (session>>16)&0xFF;
+                        rtpbuf[10] = (session>>8)&0xFF;
+                        rtpbuf[11] = (session)&0xFF;
+                        ++seq;
+                        init = ct;
+
+                        if(send(sockfd, rtpbuf, 12, 0) != 12)
+                        {
+                          myperror("send");
+                          error = 1;
+                        }
+                      }
+                    }
+                    else if(i >= 0)
+                    {
+                      fprintf(stderr, "Illegal UDP header.\n");
+                      continue;
+                    }
+                  }
+                }
+                /* send connection close always to allow nice session closing */
+                tim += (time(0)-init)*1000000/TIME_RESOLUTION;
+                rtpbuf[0] = (2<<6);
+                /* padding, extension, csrc are empty */
+                rtpbuf[1] = 98;
+                /* marker is empty */
+                rtpbuf[2] = (seq>>8)&0xFF;
+                rtpbuf[3] = (seq)&0xFF;
+                rtpbuf[4] = (tim>>24)&0xFF;
+                rtpbuf[5] = (tim>>16)&0xFF;
+                rtpbuf[6] = (tim>>8)&0xFF;
+                rtpbuf[7] = (tim)&0xFF;
+                /* sequence and timestamp are empty */
+                rtpbuf[8] = (session>>24)&0xFF;
+                rtpbuf[9] = (session>>16)&0xFF;
+                rtpbuf[10] = (session>>8)&0xFF;
+                rtpbuf[11] = (session)&0xFF;
+
+                send(sockfd, rtpbuf, 12, 0); /* cleanup */
+              }
+            }
+          }
+        }
+        else if(args.data && *args.data != '%' && args.mode == RTSP)
         {
           struct sockaddr_in local;
           sockettype sockudp = 0;
@@ -703,7 +973,7 @@ int main(int argc, char **argv)
 
           if((sockudp = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
           {
-            perror("socket");
+            myperror("socket");
             error = 1;
           }
           if(!stop && !error)
@@ -717,18 +987,18 @@ int main(int argc, char **argv)
             /* bind() in order to get a random RTP client_port */
             if((bind(sockudp, (struct sockaddr *)&local, len)) < 0)
             {
-              perror("bind");
+              myperror("bind");
               error = 1;
             }
             else if((getsockname(sockudp, (struct sockaddr*)&local, &len)) == -1)
             {
-              perror("local access failed");
+              myperror("local access failed");
               error = 1;
             }
             else if(connect(sockfd, (struct sockaddr *)&their_addr,
             sizeof(struct sockaddr)) == -1)
             {
-              perror("connect");
+              myperror("connect");
               error = 1;
             }
             localport = ntohs(local.sin_port);
@@ -741,10 +1011,10 @@ int main(int argc, char **argv)
             "Ntrip-Version: Ntrip/2.0\r\n"
             "Ntrip-Component: Ntripclient\r\n"
             "User-Agent: %s/%s\r\n"
-            "Transport: RTP/GNSS;unicast;client_port=%u\r\n"
-            "Authorization: Basic ",
+            "Transport: RTP/GNSS;unicast;client_port=%u%s",
             args.server, proxyserver ? ":" : "", proxyserver ? args.port : "",
-            args.data, cseq++, AGENTSTRING, revisionstr, localport);
+            args.data, cseq++, AGENTSTRING, revisionstr, localport,
+            (*args.user || *args.password) ? "\r\nAuthorization: Basic " : "");
             if(i > MAXDATASIZE-40 || i < 0) /* second check for old glibc */
             {
               fprintf(stderr, "Requested data too long\n");
@@ -776,12 +1046,12 @@ int main(int argc, char **argv)
           {
             if(send(sockfd, buf, (size_t)i, 0) != i)
             {
-              perror("send");
+              myperror("send");
               error = 1;
             }
             else if((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) == -1)
             {
-              perror("recv");
+              myperror("recv");
               error = 1;
             }
             else if(numbytes >= 17 && !strncmp(buf, "RTSP/1.0 200 OK\r\n", 17))
@@ -867,7 +1137,7 @@ int main(int argc, char **argv)
 
                 if((i = sendto(sockudp, rtpbuffer, 12, 0,
                 (struct sockaddr *) &casterRTP, sizeof(casterRTP))) != 12)
-                  perror("WARNING: could not send initial UDP packet");
+                  myperror("WARNING: could not send initial UDP packet");
               }
               if(!stop && !error)
               {
@@ -886,7 +1156,7 @@ int main(int argc, char **argv)
                 }
                 else if(send(sockfd, buf, (size_t)i, 0) != i)
                 {
-                  perror("send");
+                  myperror("send");
                   error = 1;
                 }
                 else if((numbytes=recv(sockfd, buf, MAXDATASIZE-1, 0)) != -1)
@@ -918,6 +1188,7 @@ int main(int argc, char **argv)
 
                     while(!stop && !error)
                     {
+                      char rtpbuffer[1526];
                       struct timeval tv = {1,0};
                       fd_set fdr;
                       fd_set fde;
@@ -936,19 +1207,19 @@ int main(int argc, char **argv)
                         error = 1;
                         continue;
                       }
-                      i = recvfrom(sockudp, buf, 1526, 0,
+                      i = recvfrom(sockudp, rtpbuffer, sizeof(rtpbuffer), 0,
                       (struct sockaddr*) &addrRTP, &len);
 #ifndef WINDOWSVERSION
                       alarm(ALARMTIME);
 #endif
-                      if(i >= 12+1 && (unsigned char)buf[0] == (2 << 6) && buf[1] == 0x60)
+                      if(i >= 12+1 && (unsigned char)rtpbuffer[0] == (2 << 6) && rtpbuffer[1] == 0x60)
                       {
                         int u,v,w;
-                        u = ((unsigned char)buf[2]<<8)+(unsigned char)buf[3];
-                        v = ((unsigned char)buf[4]<<24)+((unsigned char)buf[5]<<16)
-                        +((unsigned char)buf[6]<<8)+(unsigned char)buf[7];
-                        w = ((unsigned char)buf[8]<<24)+((unsigned char)buf[9]<<16)
-                        +((unsigned char)buf[10]<<8)+(unsigned char)buf[11];
+                        u = ((unsigned char)rtpbuffer[2]<<8)+(unsigned char)rtpbuffer[3];
+                        v = ((unsigned char)rtpbuffer[4]<<24)+((unsigned char)rtpbuffer[5]<<16)
+                        +((unsigned char)rtpbuffer[6]<<8)+(unsigned char)rtpbuffer[7];
+                        w = ((unsigned char)rtpbuffer[8]<<24)+((unsigned char)rtpbuffer[9]<<16)
+                        +((unsigned char)rtpbuffer[10]<<8)+(unsigned char)rtpbuffer[11];
 
                         if(init)
                         {
@@ -960,7 +1231,7 @@ int main(int argc, char **argv)
                             continue;
                           }
                           else if(u > sn) /* don't show out-of-order packets */
-                            fwrite(buf+12, (size_t)i-12, 1, stdout);
+                            fwrite(rtpbuffer+12, (size_t)i-12, 1, stdout);
                           ct = time(0);
                           if(ct-init > 15)
                           {
@@ -978,7 +1249,7 @@ int main(int argc, char **argv)
                             }
                             else if(send(sockfd, buf, (size_t)i, 0) != i)
                             {
-                              perror("send");
+                              myperror("send");
                               error = 1;
                             }
                             init = ct;
@@ -1030,7 +1301,7 @@ int main(int argc, char **argv)
                   }
                   else if(send(sockfd, buf, (size_t)i, 0) != i)
                   {
-                    perror("send");
+                    myperror("send");
                     error = 1;
                   }
                 }
@@ -1055,7 +1326,7 @@ int main(int argc, char **argv)
           if(connect(sockfd, (struct sockaddr *)&their_addr,
           sizeof(struct sockaddr)) == -1)
           {
-            perror("connect");
+            myperror("connect");
             error = 1;
           }
           if(!stop && !error)
@@ -1063,7 +1334,7 @@ int main(int argc, char **argv)
             if(!args.data)
             {
               i = snprintf(buf, MAXDATASIZE,
-              "GET %s%s%s%s/ HTTP/1.0\r\n"
+              "GET %s%s%s%s/ HTTP/1.1\r\n"
               "Host: %s\r\n%s"
               "User-Agent: %s/%s\r\n"
               "Connection: close\r\n"
@@ -1076,16 +1347,16 @@ int main(int argc, char **argv)
             else
             {
               i=snprintf(buf, MAXDATASIZE-40, /* leave some space for login */
-              "GET %s%s%s%s/%s HTTP/1.0\r\n"
+              "GET %s%s%s%s/%s HTTP/1.1\r\n"
               "Host: %s\r\n%s"
               "User-Agent: %s/%s\r\n"
-              "Connection: close\r\n"
-              "Authorization: Basic "
+              "Connection: close%s"
               , proxyserver ? "http://" : "", proxyserver ? proxyserver : "",
               proxyserver ? ":" : "", proxyserver ? proxyport : "",
               args.data, args.server,
               args.mode == NTRIP1 ? "" : "Ntrip-Version: Ntrip/2.0\r\n",
-              AGENTSTRING, revisionstr);
+              AGENTSTRING, revisionstr,
+              (*args.user || *args.password) ? "\r\nAuthorization: Basic " : "");
               if(i > MAXDATASIZE-40 || i < 0) /* second check for old glibc */
               {
                 fprintf(stderr, "Requested data too long\n");
@@ -1124,7 +1395,7 @@ int main(int argc, char **argv)
           {
             if(send(sockfd, buf, (size_t)i, 0) != i)
             {
-              perror("send");
+              myperror("send");
               error = 1;
             }
             else if(args.data && *args.data != '%')
