@@ -1,6 +1,6 @@
 /*
   NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.46 2008/11/04 15:35:03 stoecker Exp $
+  $Id: ntripclient.c,v 1.47 2009/02/10 12:18:23 stoecker Exp $
   Copyright (C) 2003-2008 by Dirk Stöcker <soft@dstoecker.de>
 
   This program is free software; you can redistribute it and/or modify
@@ -64,8 +64,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.46 $";
-static char datestr[]     = "$Date: 2008/11/04 15:35:03 $";
+static char revisionstr[] = "$Revision: 1.47 $";
+static char datestr[]     = "$Date: 2009/02/10 12:18:23 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, UDP = 5, END };
 
@@ -705,7 +705,8 @@ int main(int argc, char **argv)
       {
         if(args.mode == UDP)
         {
-          int session, tim, seq, init;
+          unsigned int session;
+          int tim, seq, init;
           char rtpbuf[1526];
           int i=12, j;
 
@@ -874,7 +875,8 @@ int main(int argc, char **argv)
                     && rtpbuf[1] >= 96 && rtpbuf[1] <= 98)
                     {
                       time_t ct;
-                      int u,v,w;
+                      int u,v;
+                      unsigned int w;
                       u = ((unsigned char)rtpbuf[2]<<8)+(unsigned char)rtpbuf[3];
                       v = ((unsigned char)rtpbuf[4]<<24)+((unsigned char)rtpbuf[5]<<16)
                       +((unsigned char)rtpbuf[6]<<8)+(unsigned char)rtpbuf[7];
@@ -1144,7 +1146,7 @@ int main(int argc, char **argv)
                 i = snprintf(buf, MAXDATASIZE,
                 "PLAY rtsp://%s%s%s/%s RTSP/1.0\r\n"
                 "CSeq: %d\r\n"
-                "Session: %d\r\n"
+                "Session: %u\r\n"
                 "\r\n",
                 args.server, proxyserver ? ":" : "", proxyserver ? args.port : "",
                 args.data, cseq++, session);
@@ -1238,7 +1240,7 @@ int main(int argc, char **argv)
                             i = snprintf(buf, MAXDATASIZE,
                             "GET_PARAMETER rtsp://%s%s%s/%s RTSP/1.0\r\n"
                             "CSeq: %d\r\n"
-                            "Session: %d\r\n"
+                            "Session: %u\r\n"
                             "\r\n",
                             args.server, proxyserver ? ":" : "", proxyserver
                             ? args.port : "", args.data, cseq++, session);
@@ -1289,7 +1291,7 @@ int main(int argc, char **argv)
                   i = snprintf(buf, MAXDATASIZE,
                   "TEARDOWN rtsp://%s%s%s/%s RTSP/1.0\r\n"
                   "CSeq: %d\r\n"
-                  "Session: %d\r\n"
+                  "Session: %u\r\n"
                   "\r\n",
                   args.server, proxyserver ? ":" : "", proxyserver ? args.port : "",
                   args.data, cseq++, session);
