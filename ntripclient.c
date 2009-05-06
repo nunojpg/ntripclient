@@ -1,6 +1,6 @@
 /*
   NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.47 2009/02/10 12:18:23 stoecker Exp $
+  $Id: ntripclient.c,v 1.48 2009/04/27 09:49:54 stoecker Exp $
   Copyright (C) 2003-2008 by Dirk Stöcker <soft@dstoecker.de>
 
   This program is free software; you can redistribute it and/or modify
@@ -64,8 +64,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.47 $";
-static char datestr[]     = "$Date: 2009/02/10 12:18:23 $";
+static char revisionstr[] = "$Revision: 1.48 $";
+static char datestr[]     = "$Date: 2009/04/27 09:49:54 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, UDP = 5, END };
 
@@ -807,6 +807,11 @@ int main(int argc, char **argv)
                   {
                     const char *sessioncheck = "session: ";
                     const char *datacheck = "Content-Type: gnss/data\r\n";
+                    const char *sourcetablecheck = "Content-Type: gnss/sourcetable\r\n";
+                    const char *contentlengthcheck = "Content-Length: ";
+                    const char *httpresponseend = "\r\n\r\n";
+                    int contentlength = 0, httpresponselength = 0;
+                    /* datacheck */
                     int l = strlen(datacheck)-1;
                     int j=0;
                     for(i = 12; j != l && i < numbytes-l; ++i)
@@ -814,29 +819,95 @@ int main(int argc, char **argv)
                       for(j = 0; j < l && rtpbuf[i+j] == datacheck[j]; ++j)
                         ;
                     }
-                    if(i == numbytes-l)
+                    if(i != numbytes-l)
                     {
-                      fprintf(stderr, "No 'Content-Type: gnss/data' found\n");
-                      error = 1;
-                    }
-                    /* check for Session */
-                    l = strlen(sessioncheck)-1;
-                    j=0;
-                    for(i = 12; j != l && i < numbytes-l; ++i)
-                    {
-                      for(j = 0; j < l && tolower(rtpbuf[i+j]) == sessioncheck[j]; ++j)
-                        ;
-                    }
-                    if(i != numbytes-l) /* found a session number */
-                    {
-                      i+=l;
-                      session = 0;
-                      while(i < numbytes && rtpbuf[i] >= '0' && rtpbuf[i] <= '9')
-                        session = session * 10 + rtpbuf[i++]-'0';
-                      if(rtpbuf[i] != '\r')
+                      /* check for Session */
+                      l = strlen(sessioncheck)-1;
+                      j=0;
+                      for(i = 12; j != l && i < numbytes-l; ++i)
                       {
-                        fprintf(stderr, "Could not extract session number\n");
-                        stop = 1;
+                        for(j = 0; j < l && tolower(rtpbuf[i+j]) == sessioncheck[j]; ++j)
+                          ;
+                      }
+                      if(i != numbytes-l) /* found a session number */
+                      {
+                        i+=l;
+                        session = 0;
+                        while(i < numbytes && rtpbuf[i] >= '0' && rtpbuf[i] <= '9')
+                          session = session * 10 + rtpbuf[i++]-'0';
+                        if(rtpbuf[i] != '\r')
+                        {
+                          fprintf(stderr, "Could not extract session number\n");
+                          stop = 1;
+                        }
+                      }
+                    }
+                    else
+                    {
+                      /* sourcetablecheck */
+                      l = strlen(sourcetablecheck)-1;
+                      j=0;
+                      for(i = 12; j != l && i < numbytes-l; ++i)
+                      {
+                        for(j = 0; j < l && rtpbuf[i+j] == sourcetablecheck[j]; ++j)
+                          ;
+                      }
+                      if(i == numbytes-l) 
+                      {
+                        fprintf(stderr, "No 'Content-Type: gnss/data' or"
+				" 'Content-Type: gnss/sourcetable' found\n");
+                        error = 1;
+                      }
+                      else 
+                      {
+                        /* check for http response end */
+                        l = strlen(httpresponseend)-1;
+                        j=0;
+                        for(i = 12; j != l && i < numbytes-l; ++i)
+                        {
+                          for(j = 0; j < l && rtpbuf[i+j] == httpresponseend[j]; ++j)
+                            ;
+                        }
+                        if(i != numbytes-l) /* found http response end */
+                        {
+                            httpresponselength = i+3-12;
+                        }
+                        /* check for content length */
+                        l = strlen(contentlengthcheck)-1;
+                        j=0;
+                        for(i = 12; j != l && i < numbytes-l; ++i)
+                        {
+                          for(j = 0; j < l && rtpbuf[i+j] == contentlengthcheck[j]; ++j)
+                            ;
+                        }
+                        if(i != numbytes-l) /* found content length */
+                        {
+                          i+=l;
+                          contentlength = 0;
+                          while(i < numbytes && rtpbuf[i] >= '0' && rtpbuf[i] <= '9')
+                            contentlength = contentlength * 10 + rtpbuf[i++]-'0';
+                          if(rtpbuf[i] == '\r')
+                          {
+		            contentlength += httpresponselength;                     
+                            do
+                            {
+                              fwrite(rtpbuf+12, (size_t)numbytes-12, 1, stdout);
+                              if((contentlength -= (numbytes-12)) == 0)
+                              {
+                                stop = 1;
+                              }
+                              else
+                              {
+                                numbytes = recv(sockfd, rtpbuf, sizeof(rtpbuf), 0);
+                              }
+                            }while((numbytes >12) && (!stop));
+                          }
+                          else
+                          { 
+                            fprintf(stderr, "Could not extract content length\n");
+                            stop = 1;
+                          }
+                        }
                       }
                     }
                   }
@@ -871,7 +942,7 @@ int main(int argc, char **argv)
 #ifndef WINDOWSVERSION
                     alarm(ALARMTIME);
 #endif
-                    if(i >= 12+1 && (unsigned char)rtpbuf[0] == (2 << 6)
+                    if(i >= 12 && (unsigned char)rtpbuf[0] == (2 << 6)
                     && rtpbuf[1] >= 96 && rtpbuf[1] <= 98)
                     {
                       time_t ct;
@@ -898,7 +969,7 @@ int main(int argc, char **argv)
                           error = 1;
                           continue;
                         }
-                        else if(rtpbuf[1] == 96)
+                        else if((rtpbuf[1] == 96)  && (i>12)) 
                         {
                           fwrite(rtpbuf+12, (size_t)i-12, 1, stdout);
                         }
