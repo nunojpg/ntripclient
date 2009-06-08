@@ -1,6 +1,6 @@
 /*
   NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.48 2009/04/27 09:49:54 stoecker Exp $
+  $Id: ntripclient.c,v 1.49 2009/05/06 14:52:52 stuerze Exp $
   Copyright (C) 2003-2008 by Dirk Stöcker <soft@dstoecker.de>
 
   This program is free software; you can redistribute it and/or modify
@@ -64,8 +64,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.48 $";
-static char datestr[]     = "$Date: 2009/04/27 09:49:54 $";
+static char revisionstr[] = "$Revision: 1.49 $";
+static char datestr[]     = "$Date: 2009/05/06 14:52:52 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, UDP = 5, END };
 
@@ -1084,9 +1084,13 @@ int main(int argc, char **argv)
             "Ntrip-Version: Ntrip/2.0\r\n"
             "Ntrip-Component: Ntripclient\r\n"
             "User-Agent: %s/%s\r\n"
+            "%s%s%s"
             "Transport: RTP/GNSS;unicast;client_port=%u%s",
             args.server, proxyserver ? ":" : "", proxyserver ? args.port : "",
-            args.data, cseq++, AGENTSTRING, revisionstr, localport,
+            args.data, cseq++, AGENTSTRING, revisionstr,
+            args.nmea ? "Ntrip-GGA: " : "", args.nmea ? args.nmea : "",
+            args.nmea ? "\r\n" : "",
+            localport,
             (*args.user || *args.password) ? "\r\nAuthorization: Basic " : "");
             if(i > MAXDATASIZE-40 || i < 0) /* second check for old glibc */
             {
@@ -1103,17 +1107,6 @@ int main(int argc, char **argv)
             buf[i++] = '\n';
             buf[i++] = '\r';
             buf[i++] = '\n';
-            if(args.nmea)
-            {
-              int j = snprintf(buf+i, MAXDATASIZE-i, "%s\r\n", args.nmea);
-              if(j >= 0 && j < MAXDATASIZE-i)
-                i += j;
-              else
-              {
-                fprintf(stderr, "NMEA string too long\n");
-                stop = 1;
-              }
-            }
           }
           if(!stop && !error)
           {
@@ -1419,16 +1412,21 @@ int main(int argc, char **argv)
             }
             else
             {
+              const char *nmeahead = (args.nmea && args.mode == HTTP) ? args.nmea : 0;
+
               i=snprintf(buf, MAXDATASIZE-40, /* leave some space for login */
               "GET %s%s%s%s/%s HTTP/1.1\r\n"
               "Host: %s\r\n%s"
               "User-Agent: %s/%s\r\n"
+              "%s%s%s"
               "Connection: close%s"
               , proxyserver ? "http://" : "", proxyserver ? proxyserver : "",
               proxyserver ? ":" : "", proxyserver ? proxyport : "",
               args.data, args.server,
               args.mode == NTRIP1 ? "" : "Ntrip-Version: Ntrip/2.0\r\n",
               AGENTSTRING, revisionstr,
+              nmeahead ? "Ntrip-GGA: " : "", nmeahead ? nmeahead : "",
+              nmeahead ? "\r\n" : "",
               (*args.user || *args.password) ? "\r\nAuthorization: Basic " : "");
               if(i > MAXDATASIZE-40 || i < 0) /* second check for old glibc */
               {
@@ -1449,7 +1447,7 @@ int main(int argc, char **argv)
                   buf[i++] = '\n';
                   buf[i++] = '\r';
                   buf[i++] = '\n';
-                  if(args.nmea)
+                  if(args.nmea && !nmeahead)
                   {
                     int j = snprintf(buf+i, MAXDATASIZE-i, "%s\r\n", args.nmea);
                     if(j >= 0 && j < MAXDATASIZE-i)
