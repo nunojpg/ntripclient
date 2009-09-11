@@ -1,6 +1,6 @@
 /*
   NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.49 2009/05/06 14:52:52 stuerze Exp $
+  $Id: ntripclient.c,v 1.50 2009/06/08 14:07:22 stoecker Exp $
   Copyright (C) 2003-2008 by Dirk Stöcker <soft@dstoecker.de>
 
   This program is free software; you can redistribute it and/or modify
@@ -64,8 +64,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.49 $";
-static char datestr[]     = "$Date: 2009/05/06 14:52:52 $";
+static char revisionstr[] = "$Revision: 1.50 $";
+static char datestr[]     = "$Date: 2009/06/08 14:07:22 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, UDP = 5, END };
 
@@ -852,13 +852,13 @@ int main(int argc, char **argv)
                         for(j = 0; j < l && rtpbuf[i+j] == sourcetablecheck[j]; ++j)
                           ;
                       }
-                      if(i == numbytes-l) 
+                      if(i == numbytes-l)
                       {
                         fprintf(stderr, "No 'Content-Type: gnss/data' or"
-				" 'Content-Type: gnss/sourcetable' found\n");
+                                " 'Content-Type: gnss/sourcetable' found\n");
                         error = 1;
                       }
-                      else 
+                      else
                       {
                         /* check for http response end */
                         l = strlen(httpresponseend)-1;
@@ -888,7 +888,7 @@ int main(int argc, char **argv)
                             contentlength = contentlength * 10 + rtpbuf[i++]-'0';
                           if(rtpbuf[i] == '\r')
                           {
-		            contentlength += httpresponselength;                     
+                            contentlength += httpresponselength;
                             do
                             {
                               fwrite(rtpbuf+12, (size_t)numbytes-12, 1, stdout);
@@ -903,7 +903,7 @@ int main(int argc, char **argv)
                             }while((numbytes >12) && (!stop));
                           }
                           else
-                          { 
+                          {
                             fprintf(stderr, "Could not extract content length\n");
                             stop = 1;
                           }
@@ -969,13 +969,13 @@ int main(int argc, char **argv)
                           error = 1;
                           continue;
                         }
-                        else if((rtpbuf[1] == 96)  && (i>12)) 
+                        else if((rtpbuf[1] == 96)  && (i>12))
                         {
                           fwrite(rtpbuf+12, (size_t)i-12, 1, stdout);
                         }
                       }
                       sn = u; ts = v;
-  
+
                       /* Keep Alive */
                       ct = time(0);
                       if(ct-init > 15)
@@ -1486,6 +1486,7 @@ int main(int argc, char **argv)
 #endif
                 if(!k)
                 {
+                  buf[numbytes] = 0; /* latest end mark for strstr */
                   if( numbytes > 17 &&
                     !strstr(buf, "ICY 200 OK")  &&  /* case 'proxy & ntrip 1.0 caster' */
                     (!strncmp(buf, "HTTP/1.1 200 OK\r\n", 17) ||
@@ -1532,168 +1533,176 @@ int main(int argc, char **argv)
                     if(args.mode == HTTP)
                       stop = 1;
                   }
-                  ++k;
+                  k = 1;
+                  if(args.mode == NTRIP1)
+                    continue; /* skip old headers for NTRIP1 */
+                  else
+                  {
+                    char *ep = strstr(buf, "\r\n\r\n");
+                    if(!ep || ep+4 == buf+numbytes)
+                      continue;
+                    ep += 4;
+                    memmove(buf, ep, numbytes-(ep-buf));
+                    numbytes -= (ep-buf);
+                  }
+                }
+                sleeptime = 0;
+                if(chunkymode)
+                {
+                  int cstop = 0;
+                  int pos = 0;
+                  while(!stop && !cstop && !error && pos < numbytes)
+                  {
+                    switch(chunkymode)
+                    {
+                    case 1: /* reading number starts */
+                      chunksize = 0;
+                      ++chunkymode; /* no break */
+                    case 2: /* during reading number */
+                      i = buf[pos++];
+                      if(i >= '0' && i <= '9') chunksize = chunksize*16+i-'0';
+                      else if(i >= 'a' && i <= 'f') chunksize = chunksize*16+i-'a'+10;
+                      else if(i >= 'A' && i <= 'F') chunksize = chunksize*16+i-'A'+10;
+                      else if(i == '\r') ++chunkymode;
+                      else if(i == ';') chunkymode = 5;
+                      else cstop = 1;
+                      break;
+                    case 3: /* scanning for return */
+                      if(buf[pos++] == '\n') chunkymode = chunksize ? 4 : 1;
+                      else cstop = 1;
+                      break;
+                    case 4: /* output data */
+                      i = numbytes-pos;
+                      if(i > chunksize) i = chunksize;
+                      if(args.serdevice)
+                      {
+                        int ofs = 0;
+                        while(i > ofs && !cstop && !stop && !error)
+                        {
+                          int j = SerialWrite(&sx, buf+pos+ofs, i-ofs);
+                          if(j < 0)
+                          {
+                            fprintf(stderr, "Could not access serial device\n");
+                            stop = 1;
+                          }
+                          else
+                            ofs += j;
+                        }
+                      }
+                      else
+                        fwrite(buf+pos, (size_t)i, 1, stdout);
+                      totalbytes += i;
+                      chunksize -= i;
+                      pos += i;
+                      if(!chunksize)
+                        chunkymode = 1;
+                      break;
+                    case 5:
+                      if(i == '\r') chunkymode = 3;
+                      break;
+                    }
+                  }
+                  if(cstop)
+                  {
+                    fprintf(stderr, "Error in chunky transfer encoding\n");
+                    error = 1;
+                  }
                 }
                 else
                 {
-                  sleeptime = 0;
-                  if(chunkymode)
+                  totalbytes += numbytes;
+                  if(args.serdevice)
                   {
-                    int cstop = 0;
-                    int pos = 0;
-                    while(!stop && !cstop && !error && pos < numbytes)
+                    int ofs = 0;
+                    while(numbytes > ofs && !stop)
                     {
-                      switch(chunkymode)
-                      {
-                      case 1: /* reading number starts */
-                        chunksize = 0;
-                        ++chunkymode; /* no break */
-                      case 2: /* during reading number */
-                        i = buf[pos++];
-                        if(i >= '0' && i <= '9') chunksize = chunksize*16+i-'0';
-                        else if(i >= 'a' && i <= 'f') chunksize = chunksize*16+i-'a'+10;
-                        else if(i >= 'A' && i <= 'F') chunksize = chunksize*16+i-'A'+10;
-                        else if(i == '\r') ++chunkymode;
-                        else if(i == ';') chunkymode = 5;
-                        else cstop = 1;
-                        break;
-                      case 3: /* scanning for return */
-                        if(buf[pos++] == '\n') chunkymode = chunksize ? 4 : 1;
-                        else cstop = 1;
-                        break;
-                      case 4: /* output data */
-                        i = numbytes-pos;
-                        if(i > chunksize) i = chunksize;
-                        if(args.serdevice)
-                        {
-                          int ofs = 0;
-                          while(i > ofs && !cstop && !stop && !error)
-                          {
-                            int j = SerialWrite(&sx, buf+pos+ofs, i-ofs);
-                            if(j < 0)
-                            {
-                              fprintf(stderr, "Could not access serial device\n");
-                              stop = 1;
-                            }
-                            else
-                              ofs += j;
-                          }
-                        }
-                        else
-                          fwrite(buf+pos, (size_t)i, 1, stdout);
-                        totalbytes += i;
-                        chunksize -= i;
-                        pos += i;
-                        if(!chunksize)
-                          chunkymode = 1;
-                        break;
-                      case 5:
-                        if(i == '\r') chunkymode = 3;
-                        break;
-                      }
-                    }
-                    if(cstop)
-                    {
-                      fprintf(stderr, "Error in chunky transfer encoding\n");
-                      error = 1;
-                    }
-                  }
-                  else
-                  {
-                    totalbytes += numbytes;
-                    if(args.serdevice)
-                    {
-                      int ofs = 0;
-                      while(numbytes > ofs && !stop)
-                      {
-                        int i = SerialWrite(&sx, buf+ofs, numbytes-ofs);
-                        if(i < 0)
-                        {
-                          fprintf(stderr, "Could not access serial device\n");
-                          stop = 1;
-                        }
-                        else
-                          ofs += i;
-                      }
-                    }
-                    else
-                      fwrite(buf, (size_t)numbytes, 1, stdout);
-                  }
-                  fflush(stdout);
-                  if(totalbytes < 0) /* overflow */
-                  {
-                    totalbytes = 0;
-                    starttime = time(0);
-                    lastout = starttime;
-                  }
-                  if(args.serdevice && !stop)
-                  {
-                    int doloop = 1;
-                    while(doloop && !stop)
-                    {
-                      int i = SerialRead(&sx, buf, 200);
+                      int i = SerialWrite(&sx, buf+ofs, numbytes-ofs);
                       if(i < 0)
                       {
                         fprintf(stderr, "Could not access serial device\n");
                         stop = 1;
                       }
                       else
+                        ofs += i;
+                    }
+                  }
+                  else
+                    fwrite(buf, (size_t)numbytes, 1, stdout);
+                }
+                fflush(stdout);
+                if(totalbytes < 0) /* overflow */
+                {
+                  totalbytes = 0;
+                  starttime = time(0);
+                  lastout = starttime;
+                }
+                if(args.serdevice && !stop)
+                {
+                  int doloop = 1;
+                  while(doloop && !stop)
+                  {
+                    int i = SerialRead(&sx, buf, 200);
+                    if(i < 0)
+                    {
+                      fprintf(stderr, "Could not access serial device\n");
+                      stop = 1;
+                    }
+                    else
+                    {
+                      int j = 0;
+                      if(i < 200) doloop = 0;
+                      fwrite(buf, i, 1, stdout);
+                      if(ser)
+                        fwrite(buf, i, 1, ser);
+                      while(j < i)
                       {
-                        int j = 0;
-                        if(i < 200) doloop = 0;
-                        fwrite(buf, i, 1, stdout);
-                        if(ser)
-                          fwrite(buf, i, 1, ser);
-                        while(j < i)
+                        if(nmeabufpos < 6)
                         {
-                          if(nmeabufpos < 6)
+                          if(nmeabuffer[nmeabufpos] != buf[j])
                           {
-                            if(nmeabuffer[nmeabufpos] != buf[j])
-                            {
-                              if(nmeabufpos) nmeabufpos = 0;
-                              else ++j;
-                            }
-                            else
-                            {
-                              nmeastarpos = 0;
-                              ++j; ++nmeabufpos;
-                            }
+                            if(nmeabufpos) nmeabufpos = 0;
+                            else ++j;
                           }
-                          else if((nmeastarpos && nmeabufpos == nmeastarpos + 3)
-                          || buf[j] == '\r' || buf[j] == '\n')
-                          {
-                            doloop = 0;
-                            nmeabuffer[nmeabufpos++] = '\r';
-                            nmeabuffer[nmeabufpos++] = '\n';
-                            if(send(sockfd, nmeabuffer, nmeabufpos, 0)
-                            != (int)nmeabufpos)
-                            {
-                              fprintf(stderr, "Could not send NMEA\n");
-                              error = 1;
-                            }
-                            nmeabufpos = 0;
-                          }
-                          else if(nmeabufpos > sizeof(nmeabuffer)-10 ||
-                          buf[j] == '$')
-                            nmeabufpos = 0;
                           else
                           {
-                            if(buf[j] == '*') nmeastarpos = nmeabufpos;
-                            nmeabuffer[nmeabufpos++] = buf[j++];
+                            nmeastarpos = 0;
+                            ++j; ++nmeabufpos;
                           }
+                        }
+                        else if((nmeastarpos && nmeabufpos == nmeastarpos + 3)
+                        || buf[j] == '\r' || buf[j] == '\n')
+                        {
+                          doloop = 0;
+                          nmeabuffer[nmeabufpos++] = '\r';
+                          nmeabuffer[nmeabufpos++] = '\n';
+                          if(send(sockfd, nmeabuffer, nmeabufpos, 0)
+                          != (int)nmeabufpos)
+                          {
+                            fprintf(stderr, "Could not send NMEA\n");
+                            error = 1;
+                          }
+                          nmeabufpos = 0;
+                        }
+                        else if(nmeabufpos > sizeof(nmeabuffer)-10 ||
+                        buf[j] == '$')
+                          nmeabufpos = 0;
+                        else
+                        {
+                          if(buf[j] == '*') nmeastarpos = nmeabufpos;
+                          nmeabuffer[nmeabufpos++] = buf[j++];
                         }
                       }
                     }
                   }
-                  if(args.bitrate)
+                }
+                if(args.bitrate)
+                {
+                  int t = time(0);
+                  if(t > lastout + 60)
                   {
-                    int t = time(0);
-                    if(t > lastout + 60)
-                    {
-                      lastout = t;
-                      fprintf(stderr, "Bitrate is %dbyte/s (%d seconds accumulated).\n",
-                      totalbytes/(t-starttime), t-starttime);
-                    }
+                    lastout = t;
+                    fprintf(stderr, "Bitrate is %dbyte/s (%d seconds accumulated).\n",
+                    totalbytes/(t-starttime), t-starttime);
                   }
                 }
               }
