@@ -1,6 +1,6 @@
 /*
   NTRIP client for POSIX.
-  $Id: ntripclient.c,v 1.50 2009/06/08 14:07:22 stoecker Exp $
+  $Id: ntripclient.c,v 1.51 2009/09/11 09:49:19 stoecker Exp $
   Copyright (C) 2003-2008 by Dirk Stöcker <soft@dstoecker.de>
 
   This program is free software; you can redistribute it and/or modify
@@ -64,8 +64,8 @@
 #define MAXDATASIZE 1000 /* max number of bytes we can get at once */
 
 /* CVS revision and version */
-static char revisionstr[] = "$Revision: 1.50 $";
-static char datestr[]     = "$Date: 2009/06/08 14:07:22 $";
+static char revisionstr[] = "$Revision: 1.51 $";
+static char datestr[]     = "$Date: 2009/09/11 09:49:19 $";
 
 enum MODE { HTTP = 1, RTSP = 2, NTRIP1 = 3, AUTO = 4, UDP = 5, END };
 
@@ -1723,6 +1723,7 @@ int main(int argc, char **argv)
       }
       if(sockfd)
         closesocket(sockfd);
+      sleep(10);
     } while(args.data && *args.data != '%' && !stop);
     if(args.serdevice)
     {
