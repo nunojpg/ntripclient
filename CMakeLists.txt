@@ -13,4 +13,21 @@ target_link_libraries(
     ntripclient
 )
 
-install(TARGETS ntripclient DESTINATION bin)
+install(
+    TARGETS ntripclient 
+    DESTINATION bin
+    )
+install(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/ntripclient.sh" 
+    DESTINATION bin
+    PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ
+    )
+install(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/ntripclient.conf"  
+    DESTINATION /etc/default/
+    )
+install(
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/ntripclient-init.sh"  
+    DESTINATION /etc/init.d/
+    PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ
+    )
