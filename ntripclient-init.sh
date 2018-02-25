@@ -15,6 +15,17 @@ pidfile="/var/run/ntripclient.pid"
 daemon_opts=""
     
 [ -x "${daemon}" ] || exit 0
+
+if [ -f $pidfile ]; then
+   pid=$(<$pidfile)
+   echo $pid
+   if [ -d "/proc/$pid" ]; then
+       echo "Process running"
+   else
+       rm -f $pidfile
+       echo "Process not running, remove pidfile"
+   fi
+fi
     
 case "${1}" in
     start)
