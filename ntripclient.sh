@@ -5,7 +5,7 @@
  
 DateStart=`date -u '+%s'`
 SLEEPMIN=10     # Wait min sec for next reconnect try
-SLEEPMAX=10000  # Wait max sec for next reconnect try
+SLEEPMAX=60  # Wait max sec for next reconnect try
 while true; 
 do
   ntripclient -s $SERVER -r $PORT -m $MOUNTPOINT -u $USER -p $PASSWORD -D $DEVICE -B $BAUDRATE $OTHER
