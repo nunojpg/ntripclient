@@ -348,6 +348,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     case 'p': args->password = optarg; break;
     case 'd': /* legacy option, may get removed in future */
       fprintf(stderr, "Option -d or --data is deprecated. Use -m instead.\n");
+      /* FALLTHROUGH */
     case 'm':
       if(optarg && *optarg == '?')
         args->data = encodeurl(optarg);
@@ -1557,7 +1558,8 @@ int main(int argc, char **argv)
                     {
                     case 1: /* reading number starts */
                       chunksize = 0;
-                      ++chunkymode; /* no break */
+                      ++chunkymode;
+		      /* FALLTHROUGH */
                     case 2: /* during reading number */
                       i = buf[pos++];
                       if(i >= '0' && i <= '9') chunksize = chunksize*16+i-'0';
