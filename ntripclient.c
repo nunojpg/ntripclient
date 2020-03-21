@@ -1723,7 +1723,12 @@ int main(int argc, char **argv)
       }
       if(sockfd)
         closesocket(sockfd);
-      sleep(10);
+#ifdef WINDOWSVERSION
+        Sleep(sleeptime*1000);
+#else
+        sleep(sleeptime);
+#endif
+
     } while(args.data && *args.data != '%' && !stop);
     if(args.serdevice)
     {
