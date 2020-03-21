@@ -92,6 +92,7 @@ struct Args
   enum SerialProtocol protocol;
   const char *serdevice;
   const char *serlogfile;
+  const char *logfile;
   char        _tempPlaceForNmea[256]; /* Temp place to put generated NMEA */
 };
 
@@ -122,10 +123,11 @@ static struct option opts[] = {
 { "parity",     required_argument, 0, 'Y'},
 { "databits",   required_argument, 0, 'A'},
 { "serlogfile", required_argument, 0, 'l'},
+{ "logfile",    required_argument, 0, 'o'},
 { "help",       no_argument,       0, 'h'},
 {0,0,0,0}};
 #endif
-#define ARGOPT "-d:m:bhp:r:s:u:n:S:R:M:IP:D:B:T:C:Y:A:l:L:"
+#define ARGOPT "-d:m:bhp:r:s:u:n:o:S:R:M:IP:D:B:T:C:Y:A:l:L:"
 
 int stop = 0;
 #ifndef WINDOWSVERSION
@@ -322,6 +324,7 @@ static int getargs(int argc, char **argv, struct Args *args)
   args->user = "";
   args->password = "";
   args->nmea = 0;
+  args->latlon = 0;
   args->data = 0;
   args->bitrate = 0;
   args->proxyhost = 0;
@@ -336,6 +339,7 @@ static int getargs(int argc, char **argv, struct Args *args)
   args->baud = SPABAUD_9600;
   args->serdevice = 0;
   args->serlogfile = 0;
+  args->logfile = 0;
   help = 0;
 
   do
@@ -426,6 +430,7 @@ static int getargs(int argc, char **argv, struct Args *args)
       break;
     case 'D': args->serdevice = optarg; break;
     case 'l': args->serlogfile = optarg; break;
+    case 'o': args->logfile = optarg; break;
     case 'I': args->initudp = 1; break;
     case 'P': args->udpport = strtol(optarg, 0, 10); break;
     case 'n': args->nmea = optarg; break;
@@ -517,6 +522,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     " -Y " LONG_OPT("--parity     ") "parity for serial device\n"
     " -A " LONG_OPT("--databits   ") "databits for serial device\n"
     " -l " LONG_OPT("--serlogfile ") "logfile for serial data\n"
+    " -o " LONG_OPT("--logfile    ") "logfile for incoming Ntrip data\n"
     , revisionstr, datestr, argv[0], argv[0]);
     exit(1);
   }
@@ -658,6 +664,7 @@ int main(int argc, char **argv)
     generate_nmea(&args);
     struct serial sx;
     FILE *ser = 0;
+    FILE *logfile = 0;
     char nmeabuffer[200] = "$GPGGA,"; /* our start string */
     size_t nmeabufpos = 0;
     size_t nmeastarpos = 0;
@@ -681,6 +688,15 @@ int main(int argc, char **argv)
         }
       }
     }
+    if(args.logfile)
+    {
+      if(!(logfile = fopen(args.logfile, "a+")))
+      {
+        fprintf(stderr, "Could not open logfile.\n");
+        return 20;
+      }
+    }
+    
     do
     {
       int error = 0;
@@ -1660,7 +1676,7 @@ int main(int argc, char **argv)
                         }
                       }
                       else
-                        fwrite(buf+pos, (size_t)i, 1, stdout);
+                        fwrite(buf+pos, (size_t)i, 1, logfile?logfile:stdout);
                       totalbytes += i;
                       chunksize -= i;
                       pos += i;
@@ -1697,9 +1713,9 @@ int main(int argc, char **argv)
                     }
                   }
                   else
-                    fwrite(buf, (size_t)numbytes, 1, stdout);
+                    fwrite(buf, (size_t)numbytes, 1, logfile?logfile:stdout);
                 }
-                fflush(stdout);
+                fflush(logfile?logfile:stdout);
                 if(totalbytes < 0) /* overflow */
                 {
                   totalbytes = 0;
@@ -1785,7 +1801,7 @@ int main(int argc, char **argv)
   #ifndef WINDOWSVERSION
                 alarm(ALARMTIME);
   #endif
-                fwrite(buf, (size_t)numbytes, 1, stdout);
+                fwrite(buf, (size_t)numbytes, 1, logfile?logfile:stdout);
               }
             }
           }
@@ -1794,9 +1810,9 @@ int main(int argc, char **argv)
       if(sockfd)
         closesocket(sockfd);
 #ifdef WINDOWSVERSION
-        Sleep(sleeptime*1000);
+      Sleep(sleeptime*1000);
 #else
-        sleep(sleeptime);
+      sleep(sleeptime);
 #endif
 
     } while(args.data && *args.data != '%' && !stop);
@@ -1806,6 +1822,9 @@ int main(int argc, char **argv)
     }
     if(ser)
       fclose(ser);
+    if(logfile)
+      fclose(logfile);
+
   }
   return 0;
 }
