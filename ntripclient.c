@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 #include "serial.c"
 
@@ -78,10 +79,10 @@ struct Args
   const char *proxyport;
   const char *password;
   const char *nmea;
+  const char *latlon;
   const char *data;
   int         bitrate;
   int         mode;
-
   int         udpport;
   int         initudp;
   enum SerialBaud baud;
@@ -91,6 +92,8 @@ struct Args
   enum SerialProtocol protocol;
   const char *serdevice;
   const char *serlogfile;
+  const char *logfile;
+  char        _tempPlaceForNmea[256]; /* Temp place to put generated NMEA */
 };
 
 /* option parsing */
@@ -111,6 +114,7 @@ static struct option opts[] = {
 { "proxyhost",  required_argument, 0, 'S'},
 { "user",       required_argument, 0, 'u'},
 { "nmea",       required_argument, 0, 'n'},
+{ "latlon",     required_argument, 0, 'L'},
 { "mode",       required_argument, 0, 'M'},
 { "serdevice",  required_argument, 0, 'D'},
 { "baud",       required_argument, 0, 'B'},
@@ -119,10 +123,11 @@ static struct option opts[] = {
 { "parity",     required_argument, 0, 'Y'},
 { "databits",   required_argument, 0, 'A'},
 { "serlogfile", required_argument, 0, 'l'},
+{ "logfile",    required_argument, 0, 'o'},
 { "help",       no_argument,       0, 'h'},
 {0,0,0,0}};
 #endif
-#define ARGOPT "-d:m:bhp:r:s:u:n:S:R:M:IP:D:B:T:C:Y:A:l:"
+#define ARGOPT "-d:m:bhp:r:s:u:n:o:S:R:M:IP:D:B:T:C:Y:A:l:L:"
 
 int stop = 0;
 #ifndef WINDOWSVERSION
@@ -319,6 +324,7 @@ static int getargs(int argc, char **argv, struct Args *args)
   args->user = "";
   args->password = "";
   args->nmea = 0;
+  args->latlon = 0;
   args->data = 0;
   args->bitrate = 0;
   args->proxyhost = 0;
@@ -333,6 +339,7 @@ static int getargs(int argc, char **argv, struct Args *args)
   args->baud = SPABAUD_9600;
   args->serdevice = 0;
   args->serlogfile = 0;
+  args->logfile = 0;
   help = 0;
 
   do
@@ -423,9 +430,11 @@ static int getargs(int argc, char **argv, struct Args *args)
       break;
     case 'D': args->serdevice = optarg; break;
     case 'l': args->serlogfile = optarg; break;
+    case 'o': args->logfile = optarg; break;
     case 'I': args->initudp = 1; break;
     case 'P': args->udpport = strtol(optarg, 0, 10); break;
     case 'n': args->nmea = optarg; break;
+    case 'L': args->latlon = optarg; break;
     case 'b': args->bitrate = 1; break;
     case 'h': help=1; break;
     case 'r': args->port = optarg; break;
@@ -496,6 +505,10 @@ static int getargs(int argc, char **argv, struct Args *args)
     "or using an URL:\n%s ntrip:mountpoint[/user[:password]][@[server][:port][@proxyhost[:proxyport]]][;nmea]\n"
     "\nExpert options:\n"
     " -n " LONG_OPT("--nmea       ") "NMEA string for sending to server\n"
+    " -L " LONG_OPT("--latlon     ") "Position for NMEA generation\n"
+    "     Valid position modes are:\n"
+    "     1 D:dd.dd:dd.dd  - (D)egrees for lat, lon,        Ex: D:-55.36:37.82\n"
+    "     2 M:dd.mm:dd.mm  - Degree.(M)inutes for lat, lon, Ex: D:-55.21:37.49\n"
     " -b " LONG_OPT("--bitrate    ") "output bitrate\n"
     " -I " LONG_OPT("--initudp    ") "send initial UDP packet for firewall handling\n"
     " -P " LONG_OPT("--udpport    ") "set the local UDP port\n"
@@ -509,6 +522,7 @@ static int getargs(int argc, char **argv, struct Args *args)
     " -Y " LONG_OPT("--parity     ") "parity for serial device\n"
     " -A " LONG_OPT("--databits   ") "databits for serial device\n"
     " -l " LONG_OPT("--serlogfile ") "logfile for serial data\n"
+    " -o " LONG_OPT("--logfile    ") "logfile for incoming Ntrip data\n"
     , revisionstr, datestr, argv[0], argv[0]);
     exit(1);
   }
@@ -564,6 +578,67 @@ static int encode(char *buf, int size, const char *user, const char *pwd)
   return bytes;
 }
 
+
+#define GPGGA_MSG_FMT "$GPGGA,%02d%02d%02d.00,%12.8f,%c,%014.8f,%c,1,14,0.9,130.735,M,47.606,M,,"
+
+/* Generate NMEA from latlon values if needed */
+/* return 1, if nmea was updated, otherwise 0 */
+int generate_nmea(struct Args *args)
+{
+  char    mode;
+  double  lat,lon;
+
+  if(args->nmea)
+    return 0; /* nmea already specified */
+  if(!args->latlon)
+    return 0; /* no latlon setting */
+  
+
+  int val = sscanf(args->latlon, "%c:%lf:%lf", &mode, &lat, &lon);
+  if(val != 3)
+    return 0; /* invalid format */
+                                                   
+/*  printf("parse1: %s -> %c:%f:%f\n", args->latlon, mode, lat, lon); */
+ 
+  time_t t = time(NULL); /* get current time */
+  struct tm* greenwichtime = gmtime(&t);
+
+  if(!greenwichtime)
+  {
+    fprintf(stderr, "gmtime error\n" );
+    return 0; /* some system error with time */
+  }
+
+  /* format DD.DD */
+  if(mode == 'D')
+  {
+    double lat_frac_min = ( lat - (int)lat ) * 0.6;
+    double lon_frac_min = ( lon - (int)lon ) * 0.6;
+    lat = (int)lat + lat_frac_min;
+    lon = (int)lon + lon_frac_min;
+  }
+  /* format DD.MM */
+  else if (mode == 'M')
+  {
+    /* Do nothing already in needed format */
+  }
+  else
+     return 0; /* invalid format */
+
+  char *buff=args->_tempPlaceForNmea;
+  char *p=buff,*q,sum;
+  p += sprintf( p, GPGGA_MSG_FMT,
+            greenwichtime->tm_hour, greenwichtime->tm_min, greenwichtime->tm_sec, 
+            fabs(lat)*100.0, (lat  < 0.) ? 'S' : 'N',
+            fabs(lon)*100.0, (lon  < 0.) ? 'W' : 'E');
+
+  for (q=(char *)buff+1,sum=0;*q;q++) sum^=*q; /* check-sum */
+  p += sprintf(p,"*%02X%c%c",sum,0x0D,0x0A);
+  args->nmea = &args->_tempPlaceForNmea[0];
+  printf("Generate NMEA:  %s\n", args->nmea);
+  return 1;
+}
+
 int main(int argc, char **argv)
 {
   struct Args args;
@@ -586,8 +661,10 @@ int main(int argc, char **argv)
 
   if(getargs(argc, argv, &args))
   {
+    generate_nmea(&args);
     struct serial sx;
     FILE *ser = 0;
+    FILE *logfile = 0;
     char nmeabuffer[200] = "$GPGGA,"; /* our start string */
     size_t nmeabufpos = 0;
     size_t nmeastarpos = 0;
@@ -611,6 +688,15 @@ int main(int argc, char **argv)
         }
       }
     }
+    if(args.logfile)
+    {
+      if(!(logfile = fopen(args.logfile, "a+")))
+      {
+        fprintf(stderr, "Could not open logfile.\n");
+        return 20;
+      }
+    }
+    
     do
     {
       int error = 0;
@@ -1590,7 +1676,7 @@ int main(int argc, char **argv)
                         }
                       }
                       else
-                        fwrite(buf+pos, (size_t)i, 1, stdout);
+                        fwrite(buf+pos, (size_t)i, 1, logfile?logfile:stdout);
                       totalbytes += i;
                       chunksize -= i;
                       pos += i;
@@ -1627,9 +1713,9 @@ int main(int argc, char **argv)
                     }
                   }
                   else
-                    fwrite(buf, (size_t)numbytes, 1, stdout);
+                    fwrite(buf, (size_t)numbytes, 1, logfile?logfile:stdout);
                 }
-                fflush(stdout);
+                fflush(logfile?logfile:stdout);
                 if(totalbytes < 0) /* overflow */
                 {
                   totalbytes = 0;
@@ -1715,7 +1801,7 @@ int main(int argc, char **argv)
   #ifndef WINDOWSVERSION
                 alarm(ALARMTIME);
   #endif
-                fwrite(buf, (size_t)numbytes, 1, stdout);
+                fwrite(buf, (size_t)numbytes, 1, logfile?logfile:stdout);
               }
             }
           }
@@ -1723,7 +1809,12 @@ int main(int argc, char **argv)
       }
       if(sockfd)
         closesocket(sockfd);
-      sleep(10);
+#ifdef WINDOWSVERSION
+      Sleep(sleeptime*1000);
+#else
+      sleep(sleeptime);
+#endif
+
     } while(args.data && *args.data != '%' && !stop);
     if(args.serdevice)
     {
@@ -1731,6 +1822,9 @@ int main(int argc, char **argv)
     }
     if(ser)
       fclose(ser);
+    if(logfile)
+      fclose(logfile);
+
   }
   return 0;
 }
