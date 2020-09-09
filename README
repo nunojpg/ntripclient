@@ -195,3 +195,18 @@ Further Information
 -------------------
 http://igs.bkg.bund.de/index_ntrip.htm
 euref-ip@bkg.bund.de
+
+
+Matternet Addendum
+------------------
+We have now forked this open source software in our github.
+
+We have added the following features:
+
+  JIRA    Description
+  ------  ------------
+  AVX-52  I/O of NMEA GGA sentence. Initial GGA sentence sent as command
+          argument.  Subsequent GGA sentences received from IPC pipe connected
+          to MATE. Send GGA sentence to NTRIP caster/server via socket
+          connection.  Also removed compiler warnings (that occurred in some
+          build environments) and added comments to explain functionality
