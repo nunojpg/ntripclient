@@ -29,6 +29,12 @@
 
 #include "serial.c"
 
+// uncomment this line to enable a logging to a log file to debug this client.
+// log file is hardcoded to "/home/debian/ntripclient/ntripclient.log"
+//#define NTRIPCLIENT_DEBUG_LOG
+
+#define STDIN_FD (0) // stdin file descriptor
+
 #ifdef WINDOWSVERSION
   #include <winsock.h>
   typedef SOCKET sockettype;
@@ -584,6 +590,25 @@ int main(int argc, char **argv)
   }
 #endif
 
+  // setup reading from stdin (IPC pipe) to non-blocking
+  int flags = fcntl(STDIN_FD, F_GETFL);
+  fcntl(STDIN_FD, F_SETFL, flags | O_NONBLOCK);
+
+#ifdef NTRIPCLIENT_DEBUG_LOG
+  FILE *flogfile = fopen("/home/debian/ntripclient/ntripclient.log", "w+");
+  if (!flogfile) {
+    return 20;
+  }
+
+  int idx = 0;
+  fprintf(flogfile, "args...\n");
+  for (idx = 0; idx < argc; idx++) {
+    fprintf(flogfile, "%s ", argv[idx]);
+  }
+  fprintf(flogfile, "\n");
+  unsigned int count = 0;
+#endif // NTRIPCLIENT_DEBUG_LOG
+
   if(getargs(argc, argv, &args))
   {
     struct serial sx;
@@ -616,7 +641,7 @@ int main(int argc, char **argv)
       int error = 0;
       sockettype sockfd = 0;
       int numbytes;
-      char buf[MAXDATASIZE];
+      char buf[MAXDATASIZE];  // multipurpose buffer for I/O with the socket or IPC
       struct sockaddr_in their_addr; /* connector's address information */
       struct hostent *he;
       struct servent *se;
@@ -640,6 +665,8 @@ int main(int argc, char **argv)
 #ifndef WINDOWSVERSION
       alarm(ALARMTIME);
 #endif
+
+      // set up server and port
       if(args.proxyhost)
       {
         int p;
@@ -667,6 +694,8 @@ int main(int argc, char **argv)
         server = args.server;
         port = args.port;
       }
+
+      // create socket to NTRIP caster/server
       if(!stop && !error)
       {
         memset(&their_addr, 0, sizeof(struct sockaddr_in));
@@ -701,8 +730,22 @@ int main(int argc, char **argv)
           }
         }
       }
+
+      // this block of code is very long and difficult to read.  I'll attempt
+      // to summarize here.
+      //
+      // Lines 748 - 1081 handle UDP mode
+      // Lines 1083 - 1434 handle RTSP mode
+      // Lines 1436 - 1827 handle all the other modes
+      // 
+      // In all cases, an http request for RTCM data is sent, an http response
+      // is expected/processed.  In addition for the other modes, NMEA GGA 
+      // sentences are received from a GGA source and sent to the NTRIP 
+      // caster/server.  The GGA source can be either a serial device (e.g. 
+      // GPS receiver) or an IPC pipe (e.g MATE).
       if(!stop && !error)
       {
+        // Handle UPD mode
         if(args.mode == UDP)
         {
           unsigned int session;
@@ -716,7 +759,7 @@ int main(int argc, char **argv)
           tim = rand();
           seq = rand();
 
-          rtpbuf[0] = (2<<6);
+          rtpbuf[0] = (char)(2<<6);
           /* padding, extension, csrc are empty */
           rtpbuf[1] = 97;
           /* marker is empty */
@@ -981,7 +1024,7 @@ int main(int argc, char **argv)
                       if(ct-init > 15)
                       {
                         tim += (ct-init)*1000000/TIME_RESOLUTION;
-                        rtpbuf[0] = (2<<6);
+                        rtpbuf[0] = (char)(2<<6);
                         /* padding, extension, csrc are empty */
                         rtpbuf[1] = 96;
                         /* marker is empty */
@@ -1015,7 +1058,7 @@ int main(int argc, char **argv)
                 }
                 /* send connection close always to allow nice session closing */
                 tim += (time(0)-init)*1000000/TIME_RESOLUTION;
-                rtpbuf[0] = (2<<6);
+                rtpbuf[0] = (char)(2<<6);
                 /* padding, extension, csrc are empty */
                 rtpbuf[1] = 98;
                 /* marker is empty */
@@ -1036,6 +1079,8 @@ int main(int argc, char **argv)
             }
           }
         }
+
+        // handle RTSP mode
         else if(args.data && *args.data != '%' && args.mode == RTSP)
         {
           struct sockaddr_in local;
@@ -1180,7 +1225,7 @@ int main(int argc, char **argv)
                 struct sockaddr_in casterRTP;
                 char rtpbuffer[12];
                 int i;
-                rtpbuffer[0] = (2<<6);
+                rtpbuffer[0] = (char)(2<<6);
                 /* padding, extension, csrc are empty */
                 rtpbuffer[1] = 96;
                 /* marker is empty */
@@ -1387,6 +1432,8 @@ int main(int argc, char **argv)
               closesocket(sockudp);
           }
         }
+
+        // handle all other modes
         else
         {
           if(connect(sockfd, (struct sockaddr *)&their_addr,
@@ -1447,6 +1494,8 @@ int main(int argc, char **argv)
                   buf[i++] = '\n';
                   buf[i++] = '\r';
                   buf[i++] = '\n';
+
+                  // send initial NMEA GGA sentence
                   if(args.nmea && !nmeahead)
                   {
                     int j = snprintf(buf+i, MAXDATASIZE-i, "%s\r\n", args.nmea);
@@ -1464,6 +1513,11 @@ int main(int argc, char **argv)
           }
           if(!stop && !error)
           {
+#ifdef NTRIPCLIENT_DEBUG_LOG
+            fprintf(flogfile, "sending http req\n");
+            fprintf(flogfile, "%s\n", buf);
+#endif // NTRIPCLIENT_DEBUG_LOG
+
             if(send(sockfd, buf, (size_t)i, 0) != i)
             {
               myperror("send");
@@ -1484,6 +1538,12 @@ int main(int argc, char **argv)
 #ifndef WINDOWSVERSION
                 alarm(ALARMTIME);
 #endif
+
+#ifdef NTRIPCLIENT_DEBUG_LOG
+                fprintf(flogfile, "receiving http resp\n");
+                fprintf(flogfile, "%s\n", buf);
+#endif // NTRIPCLIENT_DEBUG_LOG
+
                 if(!k)
                 {
                   buf[numbytes] = 0; /* latest end mark for strstr */
@@ -1636,24 +1696,60 @@ int main(int argc, char **argv)
                   starttime = time(0);
                   lastout = starttime;
                 }
-                if(args.serdevice && !stop)
+
+                // get subsequent NMEA GGA sentence from GGA source and
+                // send it to NTRIP caster.  Source can be either serial device
+                // or IPC pipe
+                if(args.nmea && !stop)
                 {
                   int doloop = 1;
                   while(doloop && !stop)
                   {
-                    int i = SerialRead(&sx, buf, 200);
+                    int i = 0;
+                    // get NMEA GGA sentence from serial device or IPC pipe
+                    if (args.serdevice) {
+                      i = SerialRead(&sx, buf, 200);
+                    } else {
+
+#ifdef NTRIPCLIENT_DEBUG_LOG
+                      fprintf(flogfile, "requesting IPC receive\n");
+#endif // NTRIPCLIENT_DEBUG_LOG
+
+                      i = fread(buf, 1, 200, stdin);
+
+#ifdef NTRIPCLIENT_DEBUG_LOG
+                      fprintf(flogfile, "IPC receive %d bytes\n", i);
+                      int k = 0;
+                      for (k = 0;  k < i; k++) {
+                        fprintf(flogfile, "%c", buf[k]);
+                      }
+                      fprintf(flogfile, "\n");
+#endif // NTRIPCLIENT_DEBUG_LOG
+
+                    }
                     if(i < 0)
                     {
-                      fprintf(stderr, "Could not access serial device\n");
+#ifdef NTRIPCLIENT_DEBUG_LOG
+                      fprintf(flogfile, "Could not get NMEA GGA data\n");
+#endif // NTRIPCLIENT_DEBUG_LOG
+
+                      fprintf(stderr, "Could not get NMEA GGA data\n");
                       stop = 1;
                     }
                     else
                     {
                       int j = 0;
                       if(i < 200) doloop = 0;
+
+                      // TODO: is this needed??? (write to IPC pipe back to MATE)
                       fwrite(buf, i, 1, stdout);
+
+                      // write NMEA GGA sentence to serial log file
                       if(ser)
                         fwrite(buf, i, 1, ser);
+
+                      // fill in nmeabuffer[] with GGA sentence from buf[]
+                      // note: buf[] may have more than one GGA sentence
                       while(j < i)
                       {
                         if(nmeabufpos < 6)
@@ -1675,11 +1771,20 @@ int main(int argc, char **argv)
                           doloop = 0;
                           nmeabuffer[nmeabufpos++] = '\r';
                           nmeabuffer[nmeabufpos++] = '\n';
+
+                          // send subsequent NMEA GGA sentence to NTRIP caster
                           if(send(sockfd, nmeabuffer, nmeabufpos, 0)
                           != (int)nmeabufpos)
                           {
                             fprintf(stderr, "Could not send NMEA\n");
                             error = 1;
+                          } else {
+#ifdef NTRIPCLIENT_DEBUG_LOG
+                            fprintf(flogfile, "SEND GGA to SOCKET, count = %d\n", count);
+                            fprintf(flogfile, "nmeabufpos = %zu\n", nmeabufpos);
+                            fprintf(flogfile, "%s\n", nmeabuffer);
+                            count++;
+#endif // NTRIPCLIENT_DEBUG_LOG
                           }
                           nmeabufpos = 0;
                         }
@@ -1721,16 +1826,25 @@ int main(int argc, char **argv)
           }
         }
       }
+
+      // close socket
       if(sockfd)
         closesocket(sockfd);
       sleep(10);
     } while(args.data && *args.data != '%' && !stop);
+
+    // close serial device
     if(args.serdevice)
     {
       SerialFree(&sx);
     }
+    // close serial log file
     if(ser)
       fclose(ser);
+#ifdef NTRIPCLIENT_DEBUG_LOG
+    if (flogfile)
+      fclose(flogfile);
+#endif // NTRIPCLIENT_DEBUG_LOG
   }
   return 0;
 }
